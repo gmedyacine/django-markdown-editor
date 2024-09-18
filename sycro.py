@@ -1,11 +1,13 @@
 import os
 import json
 import zipfile
+import git
+import csv
 
-# Chemin du répertoire où sont stockés les blobs (ZIP ou autres)
-blob_store_dir = "/path/to/blob/store"
-# Chemin vers le répertoire contenant les fichiers source dans le dépôt
-source_dir = "/path/to/source/files"
+# Chemin vers le répertoire où sont stockés les blobs (ZIP ou autres)
+blob_store_dir = "/path/to/blob/store"  # Modifie ce chemin pour qu'il pointe vers tes blobs
+# Chemin vers le répertoire du dépôt Git à traiter (un seul dépôt pour commencer)
+source_dir = "/tmp/test-syncro/projet-test"  # Modifie ce chemin pour ton dépôt local
 
 def extract_file_from_blob(content_hash, target_file):
     """
@@ -49,7 +51,7 @@ def process_tree(tree, project_id, project, commit, project_blobs, writer):
                 # Extraire ou copier le fichier réel à partir du blob store
                 file_path = os.path.join(source_dir, blob.path)
                 if extract_file_from_blob(content_hash, blob.path):
-                    # Log du processus, ajouter si nécessaire dans un fichier CSV
+                    # Log du processus, ajouter dans un fichier CSV
                     record = {
                         "project_id": project_id,
                         "project_name": project['name'],
@@ -71,17 +73,18 @@ def process_project(project, writer):
     Traite un projet Git, extrait les fichiers réels pour chaque commit, et les rétablit.
     """
     project_id = str(project['id'])
-    git_path = f"/path/to/project/repos/{project_id[:4]}/{project_id}"
-    repo = git.Repo(git_path)
+    repo = git.Repo(source_dir)  # Utilise le chemin source_dir pour accéder au dépôt Git
     
     all_commits = set()
     project_blobs = {}
     
+    # Parcourir toutes les branches du dépôt Git
     for branch in repo.remote().refs:
         if 'HEAD' not in branch.name:
             repo.git.checkout(branch.name.split('/')[-1])
             all_commits.update(reversed(list(repo.iter_commits())))
     
+    # Traiter chaque commit
     for commit in all_commits:
         process_tree(commit.tree, project_id, project, commit, project_blobs, writer)
     
@@ -89,6 +92,20 @@ def process_project(project, writer):
 
 # Point d'entrée principal
 if __name__ == "__main__":
-    # Suppose que tu récupères la liste des projets
-    for project in get_all('projects', {}, ['name', 'ownerId']):
+    # Exemple de données du projet à traiter
+    project = {
+        'id': '1234567890',  # Un ID fictif pour le projet
+        'name': 'Test Project',
+        'ownerId': '1'
+    }
+
+    # Préparation du fichier CSV pour enregistrer les logs
+    with open("output.csv", "w", newline='') as csvfile:
+        fieldnames = ["project_id", "project_name", "owner_id", "commit", "author", "authored_date", "message", "path", "size", "hash"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        # Appel de la fonction pour traiter le projet
         process_project(project, writer)
+
+    print("Traitement du projet terminé.")
