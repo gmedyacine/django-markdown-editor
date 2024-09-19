@@ -1,112 +1,88 @@
 import os
-from datetime import datetime
+import subprocess
 import json
 import zipfile
-import git
-import csv
+from datetime import datetime
 
-# Chemin vers le répertoire où sont stockés les blobs (ZIP ou autres)
-blob_store_dir = "/path/to/blob/store"  # Modifie ce chemin pour qu'il pointe vers tes blobs
-# Chemin vers le répertoire du dépôt Git à traiter (un seul dépôt pour commencer)
-source_dir = "/tmp/test-syncro/projet-test"  # Modifie ce chemin pour ton dépôt local
+# Chemins des répertoires
+project_dir = "/tmp/test-synchro/projet-test"
+blob_store_dir = "/path/to/blob/store"  # Remplace par le chemin vers les blobs binaires
 
+# Fonction pour exécuter une commande Git
+def execute_git_command(command, cwd=project_dir):
+    subprocess.run(command, shell=True, check=True, cwd=cwd)
+
+# Fonction pour extraire un fichier binaire du blob store
 def extract_file_from_blob(content_hash, target_file):
-    """
-    Extrait le fichier réel du blob en fonction du contentHash.
-    Si c'est un ZIP, il extrait le fichier, sinon il copie simplement le fichier.
-    """
     # Les deux premières lettres du contentHash définissent le sous-dossier
     subdir = content_hash[:2]
-    # Chemin vers le fichier blob (ZIP ou autre)
     blob_path = os.path.join(blob_store_dir, subdir, content_hash)
-
+    
     if os.path.exists(blob_path):
-        # Si c'est un fichier ZIP, on l'extrait
+        # Si c'est un ZIP, on l'extrait
         if blob_path.endswith(".zip"):
             with zipfile.ZipFile(blob_path, 'r') as zip_ref:
-                zip_ref.extractall(source_dir)
+                zip_ref.extractall(os.path.dirname(target_file))
             print(f"Extrait {target_file} depuis {blob_path}")
         else:
             # Si ce n'est pas un ZIP, on copie simplement le fichier
-            with open(blob_path, 'rb') as src, open(os.path.join(source_dir, target_file), 'wb') as dest:
+            with open(blob_path, 'rb') as src, open(target_file, 'wb') as dest:
                 dest.write(src.read())
             print(f"Copié {target_file} depuis {blob_path}")
-        return True
     else:
         print(f"Blob introuvable: {blob_path}")
         return False
+    return True
 
-def process_tree(tree, project_id, project, commit, project_blobs, writer):
-    """
-    Parcourt l'arborescence Git (les blobs) et remplace les fichiers avec le contenu réel des blobs.
-    """
-    n = 0
-    for blob in tree.blobs:
-        # Lire le fichier JSON à partir des blobs (similaire à ce que tu as dans les fichiers .py)
-        raw = blob.data_stream.read().decode('utf-8')
-        if len(raw) > 0:
-            data = json.loads(raw)
-            content_hash = data.get("contentHash")
-            if content_hash:
-                project_blobs[content_hash] = None
-                # Extraire ou copier le fichier réel à partir du blob store
-                file_path = os.path.join(source_dir, blob.path)
-                if extract_file_from_blob(content_hash, blob.path):
-                    # Log du processus, ajouter dans un fichier CSV
-                    record = {
-                        "project_id": project_id,
-                        "project_name": project['name'],
-                        "owner_id": str(project['ownerId']),
-                        "commit": str(commit),
-                        "author": str(commit.author),
-                        "authored_date": datetime.fromtimestamp(commit.authored_date).strftime("%Y-%m-%d %H:%M:%S"),
-                        "message": commit.message,
-                        "path": blob.path,
-                        "size": int(data['size']),
-                        "hash": content_hash
-                    }
-                    writer.writerow(record)
-                    n += 1
-    return n
+# Fonction pour traiter et reconstruire les commits
+def process_commits():
+    # Lister les commits dans l'ordre inverse pour garder l'historique
+    commit_list = subprocess.check_output('git rev-list --all', shell=True, cwd=project_dir).decode('utf-8').splitlines()
+    
+    for commit in reversed(commit_list):  # Parcours dans l'ordre chronologique
+        # Checkout du commit
+        execute_git_command(f'git checkout {commit}')
+        
+        # Parcourir les fichiers du commit
+        for root, dirs, files in os.walk(project_dir):
+            for file in files:
+                if file.endswith('.py'):  # Exemple pour les fichiers à traiter
+                    file_path = os.path.join(root, file)
+                    try:
+                        # Lire le contenu JSON
+                        with open(file_path, 'r') as f:
+                            raw = f.read()
+                            data = json.loads(raw)
+                            content_hash = data.get('contentHash')
+                            if content_hash:
+                                # Remplacer le fichier par son contenu binaire
+                                extract_file_from_blob(content_hash, file_path)
+                    except (json.JSONDecodeError, KeyError):
+                        # Passer si le fichier n'est pas un JSON valide ou ne contient pas 'contentHash'
+                        print(f"Fichier ignoré : {file_path}")
+        
+        # Stage des changements
+        execute_git_command('git add .')
 
-def process_project(project, writer):
-    """
-    Traite un projet Git, extrait les fichiers réels pour chaque commit, et les rétablit.
-    """
-    project_id = str(project['id'])
-    repo = git.Repo(source_dir)  # Utilise le chemin source_dir pour accéder au dépôt Git
-    
-    all_commits = set()
-    project_blobs = {}
-    
-    # Parcourir toutes les branches du dépôt Git
-    for branch in repo.remote().refs:
-        if 'HEAD' not in branch.name:
-            repo.git.checkout(branch.name.split('/')[-1])
-            all_commits.update(reversed(list(repo.iter_commits())))
-    
-    # Traiter chaque commit
-    for commit in all_commits:
-        process_tree(commit.tree, project_id, project, commit, project_blobs, writer)
-    
-    repo.__del__()
+        # Récupérer les informations du commit actuel (auteur, date, message)
+        commit_info = subprocess.check_output(f'git show --format="%an;%ae;%ad;%s" -s {commit}', shell=True, cwd=project_dir).decode('utf-8').strip()
+        author_name, author_email, commit_date, commit_message = commit_info.split(';')
 
-# Point d'entrée principal
+        # Créer le commit en conservant les informations originales
+        commit_command = (
+            f'GIT_COMMITTER_DATE="{commit_date}" '
+            f'git commit --author="{author_name} <{author_email}>" '
+            f'-m "{commit_message}"'
+        )
+        execute_git_command(commit_command)
+
+# Fonction pour réinitialiser l'état du dépôt à HEAD après avoir tout reconstruit
+def finalize_repo():
+    # Retourner à la branche principale (par exemple, master) et pousser les changements
+    execute_git_command('git checkout master')
+    execute_git_command('git push --force')
+
 if __name__ == "__main__":
-    # Exemple de données du projet à traiter
-    project = {
-        'id': '1234567890',  # Un ID fictif pour le projet
-        'name': 'Test Project',
-        'ownerId': '1'
-    }
-
-    # Préparation du fichier CSV pour enregistrer les logs
-    with open("output.csv", "w", newline='') as csvfile:
-        fieldnames = ["project_id", "project_name", "owner_id", "commit", "author", "authored_date", "message", "path", "size", "hash"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-        # Appel de la fonction pour traiter le projet
-        process_project(project, writer)
-
-    print("Traitement du projet terminé.")
+    # Exécute la reconstruction de l'historique
+    process_commits()
+    finalize_repo()
