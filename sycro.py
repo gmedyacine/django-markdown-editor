@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import json
 import zipfile
 import git
@@ -58,7 +59,7 @@ def process_tree(tree, project_id, project, commit, project_blobs, writer):
                         "owner_id": str(project['ownerId']),
                         "commit": str(commit),
                         "author": str(commit.author),
-                        "authored_date": commit.authored_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "authored_date": datetime.fromtimestamp(commit.authored_date).strftime("%Y-%m-%d %H:%M:%S"),
                         "message": commit.message,
                         "path": blob.path,
                         "size": int(data['size']),
