@@ -77,12 +77,12 @@ def replay_commit(repo, commit):
                     print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
                     continue
 
-    # Commiter avec les métadonnées d'origine
+    # Commiter avec les métadonnées d'origine pour chaque commit individuel
     author = commit.author
     authored_date = datetime.fromtimestamp(commit.authored_date)
     commit_message = commit.message
 
-    # Faire le commit avec les vraies métadonnées
+    # Faire le commit avec les vraies métadonnées pour ce commit spécifique
     repo.index.commit(
         commit_message,
         author=author,
