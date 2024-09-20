@@ -81,6 +81,7 @@ def replay_commit(repo, commit):
     authored_date = datetime.fromtimestamp(commit.authored_date)
     commit_message = commit.message
 
+    # Faire le commit avec les vraies métadonnées
     repo.index.commit(
         commit_message,
         author=author,
@@ -89,13 +90,14 @@ def replay_commit(repo, commit):
     print(f"Commit recréé : {commit_message} à la date {authored_date}")
 
 def main():
-    # Charger le dépôt
-    repo_path = "/path/to/git/repo"  # Le chemin vers le dépôt Git principal (avec les faux fichiers JSON)
+    # Charger le dépôt contenant les faux fichiers JSON
+    repo_path = "/path/to/git/repo"  # Le chemin vers le dépôt Git principal
     repo = git.Repo(repo_path)
 
     # Parcourir l'historique des commits
     commits = list(repo.iter_commits('master-b'))  # Remplace 'master-b' par ta branche
 
+    # Pour chaque commit dans l'ordre chronologique (du plus ancien au plus récent)
     for commit in reversed(commits):  # Refaire l'historique dans l'ordre chronologique
         replay_commit(repo, commit)
 
