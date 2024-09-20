@@ -1,8 +1,8 @@
 import os
-import json
-import git
 import shutil
 import zipfile
+import json
+import git
 from datetime import datetime
 
 # Chemin du répertoire où sont stockés les blobs (ZIP ou autres)
@@ -17,22 +17,30 @@ os.makedirs(source_dir)  # Crée un nouveau répertoire vide
 
 def extract_file_from_blob(content_hash, target_file):
     """ Extrait le fichier binaire réel depuis les blobs (ZIP ou autres) dans un répertoire temporaire. """
-    subdir = content_hash[:2]
+    subdir = content_hash[:2]  # Première partie du contentHash pour organiser les blobs
     blob_path = os.path.join(blob_store_dir, subdir, content_hash)
 
+    # Affiche le chemin du blob pour vérifier s'il existe bien
+    print(f"Chemin du blob : {blob_path}")
+
     if os.path.exists(blob_path):
+        # Vérifie si c'est un fichier ZIP ou un fichier normal
         if blob_path.endswith(".zip"):
             with zipfile.ZipFile(blob_path, 'r') as zip_ref:
                 zip_ref.extractall(source_dir)
             print(f"Extrait {target_file} depuis {blob_path}")
         else:
+            # Crée les répertoires cibles s'ils n'existent pas
+            full_target_path = os.path.join(source_dir, target_file)
+            os.makedirs(os.path.dirname(full_target_path), exist_ok=True)  # S'assure que les répertoires existent
+
             # Copier le fichier directement
-            with open(blob_path, 'rb') as src, open(os.path.join(source_dir, target_file), 'wb') as dest:
+            with open(blob_path, 'rb') as src, open(full_target_path, 'wb') as dest:
                 dest.write(src.read())
-            print(f"Copié {target_file} depuis {blob_path}")
+            print(f"Copié {target_file} depuis {blob_path} vers {full_target_path}")
         return True
     else:
-        print(f"Blob introuvable: {blob_path}")
+        print(f"Blob introuvable : {blob_path}")
         return False
 
 def replay_commit(repo, commit):
@@ -51,13 +59,19 @@ def replay_commit(repo, commit):
                 content_hash = data.get("contentHash")
                 if content_hash:
                     # Extraire le fichier binaire réel dans source_dir
-                    extract_file_from_blob(content_hash, blob.path)
-                    
-                    # Remplacer le faux fichier JSON par le fichier réel dans repo_path
-                    shutil.copy(os.path.join(source_dir, blob.path), os.path.join(repo.working_tree_dir, blob.path))
-                    
-                    # Ajouter le fichier au prochain commit
-                    repo.git.add(blob.path)
+                    if extract_file_from_blob(content_hash, blob.path):
+                        # Chemin du fichier source extrait
+                        source_file = os.path.join(source_dir, blob.path)
+
+                        # Vérifier si le fichier source existe avant de le copier
+                        if os.path.exists(source_file):
+                            # Remplacer le faux fichier JSON par le fichier réel dans repo_path
+                            print(f"Remplacement de {blob.path} par {source_file}")
+                            shutil.copy(source_file, os.path.join(repo.working_tree_dir, blob.path))
+                            repo.git.add(blob.path)
+                        else:
+                            print(f"Erreur : Le fichier {source_file} est introuvable.")
+                            continue
             except json.JSONDecodeError:
                 print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
                 continue
