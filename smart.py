@@ -49,32 +49,33 @@ def replay_commit(repo, commit):
     tree = commit.tree
 
     # Parcourir les fichiers dans ce commit
-    for blob in tree.blobs:
-        raw = blob.data_stream.read().decode('utf-8')
+    for blob in tree.traverse():  # Utilise traverse pour inclure les sous-dossiers
+        if blob.type == 'blob':
+            raw = blob.data_stream.read().decode('utf-8')
 
-        # Vérifie si le fichier contient un contentHash (faux fichier JSON)
-        if raw.strip():
-            try:
-                data = json.loads(raw)
-                content_hash = data.get("contentHash")
-                if content_hash:
-                    # Extraire le fichier binaire réel dans source_dir
-                    if extract_file_from_blob(content_hash, blob.path):
-                        # Chemin du fichier source extrait
-                        source_file = os.path.join(source_dir, blob.path)
+            # Vérifie si le fichier contient un contentHash (faux fichier JSON)
+            if raw.strip():
+                try:
+                    data = json.loads(raw)
+                    content_hash = data.get("contentHash")
+                    if content_hash:
+                        # Extraire le fichier binaire réel dans source_dir
+                        if extract_file_from_blob(content_hash, blob.path):
+                            # Chemin du fichier source extrait
+                            source_file = os.path.join(source_dir, blob.path)
 
-                        # Vérifier si le fichier source existe avant de le copier
-                        if os.path.exists(source_file):
-                            # Remplacer le faux fichier JSON par le fichier réel dans repo_path
-                            print(f"Remplacement de {blob.path} par {source_file}")
-                            shutil.copy(source_file, os.path.join(repo.working_tree_dir, blob.path))
-                            repo.git.add(blob.path)
-                        else:
-                            print(f"Erreur : Le fichier {source_file} est introuvable.")
-                            continue
-            except json.JSONDecodeError:
-                print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
-                continue
+                            # Vérifier si le fichier source existe avant de le copier
+                            if os.path.exists(source_file):
+                                # Remplacer le faux fichier JSON par le fichier réel dans repo_path
+                                print(f"Remplacement de {blob.path} par {source_file}")
+                                shutil.copy(source_file, os.path.join(repo.working_tree_dir, blob.path))
+                                repo.git.add(blob.path)
+                            else:
+                                print(f"Erreur : Le fichier {source_file} est introuvable.")
+                                continue
+                except json.JSONDecodeError:
+                    print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
+                    continue
 
     # Commiter avec les métadonnées d'origine
     author = commit.author
@@ -101,8 +102,8 @@ def main():
     for commit in reversed(commits):  # Refaire l'historique dans l'ordre chronologique
         replay_commit(repo, commit)
 
-    # Pousser les modifications vers le dépôt distant
-    repo.git.push('origin', 'master-b')  # Pousser sur la branche correcte
+    # Forcer le push des modifications vers le dépôt distant
+    repo.git.push('origin', 'master-b', force=True)  # Forcer le push sur la branche correcte
 
 if __name__ == "__main__":
     main()
