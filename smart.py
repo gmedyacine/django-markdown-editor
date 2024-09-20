@@ -1,27 +1,32 @@
 import os
 import json
 import git
+import shutil
 import zipfile
 from datetime import datetime
 
 # Chemin du répertoire où sont stockés les blobs (ZIP ou autres)
 blob_store_dir = "/path/to/blob/store"
-# Chemin vers le répertoire contenant les fichiers source dans le dépôt
-source_dir = "project_dir = "/tmp/test-synchro/projet-test"
+# Créer un répertoire temporaire vide pour les fichiers extraits
+source_dir = "/path/to/empty/folder"
+
+# S'assurer que le répertoire est vide avant de commencer
+if os.path.exists(source_dir):
+    shutil.rmtree(source_dir)  # Supprime le répertoire s'il existe déjà
+os.makedirs(source_dir)  # Crée un nouveau répertoire vide
 
 def extract_file_from_blob(content_hash, target_file):
-    """ Extrait le fichier binaire réel depuis les blobs (ZIP ou autres). """
+    """ Extrait le fichier binaire réel depuis les blobs (ZIP ou autres) dans un répertoire temporaire. """
     subdir = content_hash[:2]
     blob_path = os.path.join(blob_store_dir, subdir, content_hash)
 
     if os.path.exists(blob_path):
-        # Si c'est un fichier ZIP, on extrait le contenu
         if blob_path.endswith(".zip"):
             with zipfile.ZipFile(blob_path, 'r') as zip_ref:
                 zip_ref.extractall(source_dir)
             print(f"Extrait {target_file} depuis {blob_path}")
         else:
-            # Si ce n'est pas un ZIP, on copie simplement le fichier
+            # Copier le fichier directement
             with open(blob_path, 'rb') as src, open(os.path.join(source_dir, target_file), 'wb') as dest:
                 dest.write(src.read())
             print(f"Copié {target_file} depuis {blob_path}")
@@ -45,8 +50,13 @@ def replay_commit(repo, commit):
                 data = json.loads(raw)
                 content_hash = data.get("contentHash")
                 if content_hash:
-                    # Remplacer le fichier par le contenu binaire réel
+                    # Extraire le fichier binaire réel dans source_dir
                     extract_file_from_blob(content_hash, blob.path)
+                    
+                    # Remplacer le faux fichier JSON par le fichier réel dans repo_path
+                    shutil.copy(os.path.join(source_dir, blob.path), os.path.join(repo.working_tree_dir, blob.path))
+                    
+                    # Ajouter le fichier au prochain commit
                     repo.git.add(blob.path)
             except json.JSONDecodeError:
                 print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
@@ -66,16 +76,17 @@ def replay_commit(repo, commit):
 
 def main():
     # Charger le dépôt
-    repo = git.Repo('/path/to/git/repo')
+    repo_path = "/path/to/git/repo"  # Le chemin vers le dépôt Git principal (avec les faux fichiers JSON)
+    repo = git.Repo(repo_path)
 
     # Parcourir l'historique des commits
-    commits = list(repo.iter_commits('master'))
+    commits = list(repo.iter_commits('master-b'))  # Remplace 'master-b' par ta branche
 
     for commit in reversed(commits):  # Refaire l'historique dans l'ordre chronologique
         replay_commit(repo, commit)
 
     # Pousser les modifications vers le dépôt distant
-    repo.git.push('origin', 'master')
+    repo.git.push('origin', 'master-b')  # Pousser sur la branche correcte
 
 if __name__ == "__main__":
     main()
