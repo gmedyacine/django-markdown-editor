@@ -1,0 +1,17 @@
+test_redis_connection:
+  stage: test
+  script:
+    - echo "Fetching Redis credentials from Vault via API..."
+    # Définir l'adresse de Vault et le token
+    - export VAULT_ADDR="https://vault.staging.echonen.com"
+    - export VAULT_TOKEN="YOUR_VAULT_TOKEN"  # Remplacez par votre token Vault
+
+    # Récupérer le nom d'utilisateur de Redis
+    - export REDIS_USER=$(curl --header "X-Vault-Token: $VAULT_TOKEN" --request GET "$VAULT_ADDR/v1/UPM_CARDIF/8785/EC002102860/cloud/data/redis/RDO021000358" | jq -r '.data.data.user')
+    
+    # Récupérer le mot de passe de Redis
+    - export REDIS_PASSWORD=$(curl --header "X-Vault-Token: $VAULT_TOKEN" --request GET "$VAULT_ADDR/v1/UPM_CARDIF/8785/EC002102860/cloud/data/redis/RDO021000358" | jq -r '.data.data.password')
+
+    # Tester la connexion Redis
+    - echo "Testing Redis Connection with user: $REDIS_USER..."
+    - redis-cli -h redis-host -u $REDIS_USER -a $REDIS_PASSWORD PING
