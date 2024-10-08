@@ -1,24 +1,26 @@
-import subprocess
+import requests
 import json
 import redis
 
 def get_secret_from_vault(secret_path, vault_token, vault_url, vault_namespace):
-    # Construction de la commande curl
-    curl_command = [
-        "curl", "-s",  # "-s" pour "silent"
-        "-X", "GET",
-        f"{vault_url}/v1/{secret_path}",
-        "-H", f"X-Vault-Token: {vault_token}",
-        "-H", "Accept: application/json",
-        "-H", f"X-Vault-Namespace: {vault_namespace}"
-    ]
+    # Construction de l'URL de l'API
+    url = f"{vault_url}/v1/{secret_path}"
 
-    # Exécution de la commande curl
-    result = subprocess.run(curl_command, capture_output=True, text=True)
-    if result.returncode == 0:
-        return json.loads(result.stdout)  # Conversion de la réponse JSON en dictionnaire Python
+    # Construction des headers pour l'authentification et les options d'API
+    headers = {
+        "X-Vault-Token": vault_token,
+        "Accept": "application/json",
+        "X-Vault-Namespace": vault_namespace
+    }
+
+    # Exécution de la requête GET via requests
+    response = requests.get(url, headers=headers)
+
+    # Vérification de la réponse
+    if response.status_code == 200:
+        return response.json()  # Conversion de la réponse JSON en dictionnaire Python
     else:
-        raise Exception("Failed to retrieve secret: " + result.stderr)
+        raise Exception(f"Failed to retrieve secret: {response.status_code} {response.text}")
 
 def test_redis_connectivity(redis_host, redis_port, redis_user, redis_password):
     # Connexion à Redis
