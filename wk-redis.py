@@ -57,9 +57,15 @@ try:
     # Extraction du mot de passe et de l'utilisateur Redis depuis la réponse JSON
     redis_user = secret_data['data']['data']['user']
     redis_password = secret_data['data']['data']['password']
+    certificate = secret_data['data']['data']['certificate']
+    with open("redis_certificate.pem", "w") as cert_file:
+        cert_file.write(certificate)
     
     # Test de la connectivité à Redis
     test_redis_connectivity(redis_host, redis_port, redis_user, redis_password)
 
 except Exception as e:
     print(str(e))
+
+
+
