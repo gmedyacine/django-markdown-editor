@@ -271,3 +271,27 @@ Notes
 .. _WIKI: https://github.com/agusmakmun/django-markdown-editor/wiki
 .. _fixed this issue: https://github.com/agusmakmun/django-markdown-editor/issues/3
 .. _custom uploader: https://github.com/agusmakmun/django-markdown-editor/wiki
+
+
+Subject: Request to Set Vault Certificate and Key as Environment Variables in Domino Platforms
+
+Dear [Recipient's Name],
+
+For the deployment of our project on Domino (HPROD and Preprod), we have identified the need to use secure access through HashiCorp Vault. To maintain a consistent logic across our workspaces and facilitate seamless access to necessary secrets, we require two specific environment variables to be configured on both HPROD and Preprod platforms.
+
+The requested environment variables are:
+
+VAULT_FILE_CERT: Represents the Vault certificate.
+VAULT_FILE_KEY: Represents the Vault key.
+These variables will enable the generation of access tokens, which will be used to query Vault and retrieve essential secrets. The tokens generated through these keys will be crucial for maintaining secure and smooth operations in our Domino workspaces.
+
+We kindly ask for your support in configuring these environment variables as soon as possible, to align our deployment process across environments and ensure that everything functions as expected.
+
+Thank you in advance for your assistance. Should you need any further details, please do not hesitate to reach out.
+
+Best regards,
+[Your Name]
+[Your Position]
+[Your Contact Information]
+
+
