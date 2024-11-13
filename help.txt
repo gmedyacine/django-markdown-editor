@@ -1,29 +1,59 @@
-4. Migrate Issues and Merge Requests Using the GitLab API
-Issues and merge requests are not transferred through a simple Git mirror. To do this, you can use the GitLab API to export this data from the source repository and import it into the destination repository.
+#!/bin/bash
 
-a. Export Issues and Merge Requests
-Use the GitLab API to retrieve all issues and merge requests from the source project.
+issues_json=$(cat all_issues.json)
 
-Here's an example of exporting issues:
+echo "$issues_json" | jq -c '.[]' | while read issue; do
+    id=$(echo $issue | jq -r '.id // empty')
+    project_id=$(echo $issue | jq -r '.project_id // empty')
+    title=$(echo $issue | jq -r '.title // ""')
+    description=$(echo $issue | jq -r '.description // ""')
+    state=$(echo $issue | jq -r '.state // ""')
+    created_at=$(echo $issue | jq -r '.created_at // ""')
+    updated_at=$(echo $issue | jq -r '.updated_at // ""')
+    closed_at=$(echo $issue | jq -r '.closed_at // ""')
+    closed_by=$(echo $issue | jq -r '.closed_by // ""')
+    labels=$(echo $issue | jq -r '.labels // [] | join(",")')
+    milestones=$(echo $issue | jq -r '.milestones // [] | join(",")')
+    assignees=$(echo $issue | jq -r '.assignees // [] | join(",")')
+    author=$(echo $issue | jq -r '.author // ""')
+    type=$(echo $issue | jq -r '.type // ""')
+    assignee=$(echo $issue | jq -r '.assignee // ""')
+    user_notes_count=$(echo $issue | jq -r '.user_notes_count // 0')
+    merge_requests_count=$(echo $issue | jq -r '.merge_requests_count // 0')
+    upvotes=$(echo $issue | jq -r '.upvotes // 0')
+    downvotes=$(echo $issue | jq -r '.downvotes // 0')
+    due_date=$(echo $issue | jq -r '.due_date // ""')
+    confidential=$(echo $issue | jq -r '.confidential // false')
+    discussion_locked=$(echo $issue | jq -r '.discussion_locked // false')
+    issue_type=$(echo $issue | jq -r '.issue_type // ""')
+    web_url=$(echo $issue | jq -r '.web_url // ""')
+    time_stats=$(echo $issue | jq -r '.time_stats // ""')
+    task_completion_status=$(echo $issue | jq -r '.task_completion_status // ""')
+    blocking_issues_count=$(echo $issue | jq -r '.blocking_issues_count // 0')
+    has_tasks=$(echo $issue | jq -r '.has_tasks // false')
+    task_status=$(echo $issue | jq -r '.task_status // ""')
+    links=$(echo $issue | jq -r '._links // ""')
+    references=$(echo $issue | jq -r '.references // ""')
+    severity=$(echo $issue | jq -r '.severity // ""')
+    moved_to_id=$(echo $issue | jq -r '.moved_to_id // ""')
+    service_desk_reply_to=$(echo $issue | jq -r '.service_desk_reply_to // ""')
 
-bash
-Copier le code
-curl --header "PRIVATE-TOKEN: <source_token>" "https://gitlab.wisterdsp.com/api/v4/projects/<project_id>/issues" -o issues.json
-And for merge requests:
-
-bash
-Copier le code
-curl --header "PRIVATE-TOKEN: <source_token>" "https://gitlab.wisterdsp.com/api/v4/projects/<project_id>/merge_requests" -o mrs.json
-b. Import Issues and Merge Requests into the Destination Repository
-To import, read the exported JSON files and use the destination API to recreate each issue and merge request. Here’s an example of recreating an issue:
-
-bash
-Copier le code
-while read issue; do
-    title=$(echo $issue | jq -r '.title')
-    description=$(echo $issue | jq -r '.description')
-    
-    curl --header "PRIVATE-TOKEN: <destination_token>" \
+    curl -X POST --header "PRIVATE-TOKEN: <your_private_token>" \
          --data "title=$title" --data "description=$description" \
-         "https://git.fr.clara.net/api/v4/projects/<destination_project_id>/issues"
-done < issues.json
+         --data "state=$state" --data "created_at=$created_at" \
+         --data "updated_at=$updated_at" --data "closed_at=$closed_at" \
+         --data "closed_by=$closed_by" --data "labels=$labels" \
+         --data "milestones=$milestones" --data "assignees=$assignees" \
+         --data "author=$author" --data "type=$type" \
+         --data "assignee=$assignee" --data "user_notes_count=$user_notes_count" \
+         --data "merge_requests_count=$merge_requests_count" --data "upvotes=$upvotes" \
+         --data "downvotes=$downvotes" --data "due_date=$due_date" \
+         --data "confidential=$confidential" --data "discussion_locked=$discussion_locked" \
+         --data "issue_type=$issue_type" --data "web_url=$web_url" \
+         --data "time_stats=$time_stats" --data "task_completion_status=$task_completion_status" \
+         --data "blocking_issues_count=$blocking_issues_count" --data "has_tasks=$has_tasks" \
+         --data "task_status=$task_status" --data "links=$links" \
+         --data "references=$references" --data "severity=$severity" \
+         --data "moved_to_id=$moved_to_id" --data "service_desk_reply_to=$service_desk_reply_to" \
+         "https://gitlab-dogen.group.echonet/api/v4/projects/74664/issues"
+done
