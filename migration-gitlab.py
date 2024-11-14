@@ -2,6 +2,7 @@ import os
 import subprocess
 import csv
 import git
+import shutil
 
 # Variables globales
 csv_path = "/chemin/vers/votre_fichier.csv"
@@ -19,7 +20,8 @@ def read_project_info(csv_path):
             project_info.append({
                 "project_id": row["ProjectSourceID"],
                 "project_name": row["ProjectSourcePath"],
-                "git_url": row["NewGitlabProject"],
+                "git_url_json": row["NewGitlabProject"],  # URL pour le dépôt de faux fichiers JSON
+                "git_url_binaries": row["ProjectNewName"],  # URL pour le dépôt de binaires cible
                 "token": row["GitlabToken"]  # Assurez-vous que la colonne du token est correcte
             })
     return project_info
@@ -54,6 +56,13 @@ def reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_
 
     return binaries_repo
 
+# Fonction pour effectuer le push vers le dépôt cible
+def push_to_target_repo(local_repo_dir, url_git, token):
+    auth_url_git = url_git.replace("https://", f"https://{token}@")
+    repo = git.Repo(local_repo_dir)
+    repo.create_remote('target', auth_url_git)
+    repo.git.push('--mirror', 'target')  # Push avec mirroring complet
+
 # Fonction principale
 def main():
     project_info_list = read_project_info(csv_path)
@@ -64,16 +73,20 @@ def main():
         # Clone du dépôt JSON
         print("Clonage du dépôt JSON...")
         json_repo_dir = os.path.join(local_repo_dir, project_info["project_id"])
-        repo = clone_json_repo(project_info["git_url"], project_info["token"], json_repo_dir)
+        clone_json_repo(project_info["git_url_json"], project_info["token"], json_repo_dir)
 
         # Reconstruction du dépôt avec les binaires
         print("Reconstruction des commits avec les binaires...")
-        binaries_repo = reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_info["project_id"])
+        reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_info["project_id"])
 
-        # Push vers la cible Git
-        target_url = project_info["git_url"].replace("https://", f"https://{project_info['token']}@")
-        binaries_repo.create_remote('target', target_url)
-        binaries_repo.git.push('target', 'master', force=True)  # Push final
+        # Push vers la cible Git des binaires
+        print("Push du dépôt binaire vers la cible...")
+        push_to_target_repo(binaries_repo_dir, project_info["git_url_binaries"], project_info["token"])
+
+        # Nettoyage pour la prochaine itération
+        shutil.rmtree(json_repo_dir)
+        shutil.rmtree(binaries_repo_dir)
+        os.makedirs(binaries_repo_dir, exist_ok=True)
 
         print(f"Migration des binaires terminée pour le projet {project_info['project_id']}.")
 
