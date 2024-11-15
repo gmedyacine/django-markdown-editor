@@ -1,88 +1,106 @@
 import os
 import subprocess
-import json
-import zipfile
-from datetime import datetime
+import csv
+import git
+import shutil
 
-# Chemins des répertoires
-project_dir = "/tmp/test-synchro/projet-test"
-blob_store_dir = "/path/to/blob/store"  # Remplace par le chemin vers les blobs binaires
+# Variables globales
+csv_path = "/chemin/vers/votre_fichier.csv"
+local_repo_dir = "/tmp/fake_git_repo_clone"
+binaries_repo_dir = "/tmp/real_binaries_repo"
+pod_name = "git-0"
+namespace = "domino-platform"
 
-# Fonction pour exécuter une commande Git
-def execute_git_command(command, cwd=project_dir):
-    subprocess.run(command, shell=True, check=True, cwd=cwd)
+# Fonction pour lire le CSV et récupérer les informations nécessaires
+def read_project_info(csv_path):
+    project_info = []
+    with open(csv_path, mode="r") as file:
+        reader = csv.DictReader(file, delimiter=';')
+        for row in reader:
+            project_info.append({
+                "project_id": row["ProjectSourceID"],
+                "project_name": row["ProjectSourcePath"],
+                "git_url": row["NewGitlabProject"],
+                "token": row["GitlabToken"]  # Assurez-vous que la colonne du token est correcte
+            })
+    return project_info
 
-# Fonction pour extraire un fichier binaire du blob store
-def extract_file_from_blob(content_hash, target_file):
-    # Les deux premières lettres du contentHash définissent le sous-dossier
-    subdir = content_hash[:2]
-    blob_path = os.path.join(blob_store_dir, subdir, content_hash)
-    
-    if os.path.exists(blob_path):
-        # Si c'est un ZIP, on l'extrait
-        if blob_path.endswith(".zip"):
-            with zipfile.ZipFile(blob_path, 'r') as zip_ref:
-                zip_ref.extractall(os.path.dirname(target_file))
-            print(f"Extrait {target_file} depuis {blob_path}")
-        else:
-            # Si ce n'est pas un ZIP, on copie simplement le fichier
-            with open(blob_path, 'rb') as src, open(target_file, 'wb') as dest:
-                dest.write(src.read())
-            print(f"Copié {target_file} depuis {blob_path}")
-    else:
-        print(f"Blob introuvable: {blob_path}")
-        return False
-    return True
+# Fonction pour cloner le dépôt JSON depuis GitLab
+def clone_json_repo(git_url, token, clone_dir):
+    auth_git_url = git_url.replace("https://", f"https://{token}@")
+    repo = git.Repo.clone_from(auth_git_url, clone_dir)
+    return repo
 
-# Fonction pour traiter et reconstruire les commits
-def process_commits():
-    # Lister les commits dans l'ordre inverse pour garder l'historique
-    commit_list = subprocess.check_output('git rev-list --all', shell=True, cwd=project_dir).decode('utf-8').splitlines()
-    
-    for commit in reversed(commit_list):  # Parcours dans l'ordre chronologique
-        # Checkout du commit
-        execute_git_command(f'git checkout {commit}')
+# Fonction pour extraire le content hash d'un fichier JSON
+def extract_content_hash(file_path):
+    with open(file_path, 'r') as file:
+        # Assurez-vous que le fichier est bien un JSON avant de l'ouvrir
+        data = json.load(file)
+        return data.get("contentHash")
+
+# Fonction pour reconstituer les commits avec les vrais binaires
+def reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_id):
+    json_repo = git.Repo(json_repo_dir)
+    os.makedirs(binaries_repo_dir, exist_ok=True)
+    binaries_repo = git.Repo.init(binaries_repo_dir)
+
+    for commit in json_repo.iter_commits('master'):  # Parcours de chaque commit
+        json_repo.git.checkout(commit)  # Passage au commit actuel
+        # Copier les binaires en remplaçant les faux fichiers JSON
+        for root, _, files in os.walk(json_repo_dir):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                # Logique pour obtenir les binaires réels
+                content_hash = extract_content_hash(file_path)
+                # Vérifier les deux cas : avec et sans extension ZIP
+                binary_path = f"/var/opt/git/projectrepos/{content_hash[:2]}/{content_hash}"
+                if not os.path.exists(binary_path):
+                    binary_path += ".zip"  # Essayer avec .zip si sans extension n'existe pas
+                
+                if os.path.exists(binary_path):
+                    dest_path = os.path.join(binaries_repo_dir, file_name)
+                    shutil.copy(binary_path, dest_path)
         
-        # Parcourir les fichiers du commit
-        for root, dirs, files in os.walk(project_dir):
-            for file in files:
-                if file.endswith('.py'):  # Exemple pour les fichiers à traiter
-                    file_path = os.path.join(root, file)
-                    try:
-                        # Lire le contenu JSON
-                        with open(file_path, 'r') as f:
-                            raw = f.read()
-                            data = json.loads(raw)
-                            content_hash = data.get('contentHash')
-                            if content_hash:
-                                # Remplacer le fichier par son contenu binaire
-                                extract_file_from_blob(content_hash, file_path)
-                    except (json.JSONDecodeError, KeyError):
-                        # Passer si le fichier n'est pas un JSON valide ou ne contient pas 'contentHash'
-                        print(f"Fichier ignoré : {file_path}")
-        
-        # Stage des changements
-        execute_git_command('git add .')
+        binaries_repo.git.add(A=True)
+        binaries_repo.index.commit(commit.message, author=commit.author, committer=commit.committer,
+                                   author_date=commit.authored_date, commit_date=commit.committed_date)
 
-        # Récupérer les informations du commit actuel (auteur, date, message)
-        commit_info = subprocess.check_output(f'git show --format="%an;%ae;%ad;%s" -s {commit}', shell=True, cwd=project_dir).decode('utf-8').strip()
-        author_name, author_email, commit_date, commit_message = commit_info.split(';')
+    return binaries_repo
 
-        # Créer le commit en conservant les informations originales
-        commit_command = (
-            f'GIT_COMMITTER_DATE="{commit_date}" '
-            f'git commit --author="{author_name} <{author_email}>" '
-            f'-m "{commit_message}"'
-        )
-        execute_git_command(commit_command)
+# Fonction principale
+def main():
+    project_info_list = read_project_info(csv_path)
+    
+    for project_info in project_info_list:
+        print(f"Traitement du projet {project_info['project_id']}...")
 
-# Fonction pour réinitialiser l'état du dépôt à HEAD après avoir tout reconstruit
-def finalize_repo():
-    # Retourner à la branche principale (par exemple, master) et pousser les changements
-    execute_git_command('git checkout master')
-    execute_git_command('git push --force')
+        # Clone du dépôt JSON
+        print("Clonage du dépôt JSON...")
+        json_repo_dir = os.path.join(local_repo_dir, project_info["project_id"])
+        repo = clone_json_repo(project_info["git_url"], project_info["token"], json_repo_dir)
+
+        # Reconstruction du dépôt avec les binaires
+        print("Reconstruction des commits avec les binaires...")
+        binaries_repo = reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_info["project_id"])
+
+        # Push vers la cible Git
+        target_url = project_info["git_url"].replace("https://", f"https://{project_info['token']}@")
+        binaries_repo.create_remote('target', target_url)
+        binaries_repo.git.push('target', 'master', force=True)  # Push final
+
+        print(f"Migration des binaires terminée pour le projet {project_info['project_id']}.")
 
 if __name__ == "__main__":
-    # Exécute la reconstruction de l'historique
-    process_commits()
-    finalize_repo()
+    main()
+
+Modifications apportées :
+
+1. Vérification des extensions binaires : Le script vérifie d'abord si le fichier binaire existe sans extension, et sinon, il essaie avec .zip.
+
+
+2. Fonction extract_content_hash : Cette fonction a été isolée pour lire le contentHash depuis chaque fichier JSON de manière fiable.
+
+
+
+Cela devrait maintenant fonctionner avec les deux types de fichiers binaires (avec ou sans extension .zip).
+
