@@ -31,7 +31,30 @@ def clone_json_repo(git_url, token, clone_dir):
     auth_git_url = git_url.replace("https://", f"https://{token}@")
     repo = git.Repo.clone_from(auth_git_url, clone_dir)
     return repo
+# Fonction pour extraire le content hash d'un fichier JSON
+def extract_content_hash(file_path):
+    with open(file_path, 'r') as file:
+        # Assurez-vous que le fichier est bien un JSON avant de l'ouvrir
+        data = json.load(file)
+        return data.get("contentHash")
 
+# Fonction pour gérer l'extraction des binaires, qu'ils soient en .zip ou non
+def get_binary_file(content_hash, dest_path):
+    binary_path = f"/var/opt/git/projectrepos/{content_hash[:2]}/{content_hash}"
+    
+    # Vérification si le fichier binaire existe sans extension
+    if os.path.exists(binary_path):
+        shutil.copy(binary_path, dest_path)
+    else:
+        # Si non, on essaie avec .zip et on extrait le fichier si présent
+        zip_path = f"{binary_path}.zip"
+        if os.path.exists(zip_path):
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Extraire le fichier ayant le nom `content_hash` dans le dossier de destination
+                zip_ref.extract(content_hash, os.path.dirname(dest_path))
+                shutil.move(os.path.join(os.path.dirname(dest_path), content_hash), dest_path)
+
+# Fonction pour reconstituer les commits avec les vrais binaires
 # Fonction pour reconstituer les commits avec les vrais binaires
 def reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_id):
     json_repo = git.Repo(json_repo_dir)
