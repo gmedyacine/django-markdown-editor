@@ -28,6 +28,8 @@ def read_project_info(csv_path):
 
 # Fonction pour cloner le dépôt JSON depuis GitLab
 def clone_json_repo(git_url, token, clone_dir):
+    if os.path.exists(clone_dir):
+        shutil.rmtree(clone_dir)
     auth_git_url = git_url.replace("https://", f"https://{token}@")
     repo = git.Repo.clone_from(auth_git_url, clone_dir)
     return repo
