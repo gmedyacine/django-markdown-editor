@@ -34,52 +34,80 @@ def clone_json_repo(git_url, token, clone_dir):
     repo = git.Repo.clone_from(auth_git_url, clone_dir)
     return repo
 # Fonction pour extraire le content hash d'un fichier JSON
-def extract_content_hash(file_path):
-    with open(file_path, 'r') as file:
-        # Assurez-vous que le fichier est bien un JSON avant de l'ouvrir
-        data = json.load(file)
-        return data.get("contentHash")
+def extract_file_from_blob(content_hash, target_file):
+    """ Extrait le fichier binaire réel depuis les blobs (ZIP ou autres) dans un répertoire temporaire. """
+    subdir = content_hash[:2]  # Première partie du contentHash pour organiser les blobs
+    blob_path = os.path.join(blob_store_dir, subdir, content_hash)
 
-# Fonction pour gérer l'extraction des binaires, qu'ils soient en .zip ou non
-def get_binary_file(content_hash, dest_path):
-    binary_path = f"/var/opt/git/projectrepos/{content_hash[:2]}/{content_hash}"
-    
-    # Vérification si le fichier binaire existe sans extension
-    if os.path.exists(binary_path):
-        shutil.copy(binary_path, dest_path)
+    print(f"Chemin du blob : {blob_path}")
+
+    if os.path.exists(blob_path):
+        # Vérifie si c'est un fichier ZIP ou un fichier normal
+        if blob_path.endswith(".zip"):
+            with zipfile.ZipFile(blob_path, 'r') as zip_ref:
+                zip_ref.extractall(source_dir)
+            print(f"Extrait {target_file} depuis {blob_path}")
+        else:
+            # Crée les répertoires cibles s'ils n'existent pas
+            full_target_path = os.path.join(source_dir, target_file)
+            os.makedirs(os.path.dirname(full_target_path), exist_ok=True)  # S'assure que les répertoires existent
+
+            # Copier le fichier directement
+            with open(blob_path, 'rb') as src, open(full_target_path, 'wb') as dest:
+                dest.write(src.read())
+            print(f"Copié {target_file} depuis {blob_path} vers {full_target_path}")
+        return True
     else:
-        # Si non, on essaie avec .zip et on extrait le fichier si présent
-        zip_path = f"{binary_path}.zip"
-        if os.path.exists(zip_path):
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                # Extraire le fichier ayant le nom `content_hash` dans le dossier de destination
-                zip_ref.extract(content_hash, os.path.dirname(dest_path))
-                shutil.move(os.path.join(os.path.dirname(dest_path), content_hash), dest_path)
+        print(f"Blob introuvable : {blob_path}")
+        return False
 
-# Fonction pour reconstituer les commits avec les vrais binaires
-# Fonction pour reconstituer les commits avec les vrais binaires
-def reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_id):
-    json_repo = git.Repo(json_repo_dir)
-    os.makedirs(binaries_repo_dir, exist_ok=True)
-    binaries_repo = git.Repo.init(binaries_repo_dir)
+# Fonction pour recréer les commits avec les binaires dans le nouveau dépôt
+def recreate_commit_with_binaries(new_repo, commit, repo):
+    """ Recrée le commit avec les fichiers binaires dans le nouveau dépôt, avec les métadonnées du commit d'origine. """
+    repo.git.checkout(commit)  # Se positionner sur le commit en question
+    tree = commit.tree
 
-    for commit in json_repo.iter_commits('master'):  # Parcours de chaque commit
-        json_repo.git.checkout(commit)  # Passage au commit actuel
-        # Copier les binaires en remplaçant les faux fichiers JSON
-        for root, _, files in os.walk(json_repo_dir):
-            for file_name in files:
-                file_path = os.path.join(root, file_name)
-                # Logique pour obtenir les binaires réels
-                content_hash = extract_content_hash(file_path)
-                binary_path = f"/var/opt/git/projectrepos/{content_hash[:2]}/{content_hash}.zip"  # Chemin du binaire
-                if os.path.exists(binary_path):
-                    shutil.copy(binary_path, os.path.join(binaries_repo_dir, file_name))
-        
-        binaries_repo.git.add(A=True)
-        binaries_repo.index.commit(commit.message, author=commit.author, committer=commit.committer,
-                                   author_date=commit.authored_date, commit_date=commit.committed_date)
+    # Parcourir les fichiers dans ce commit et les remplacer par les bons binaires
+    for blob in tree.traverse():
+        if blob.type == 'blob':
+            raw = blob.data_stream.read().decode('utf-8')
 
-    return binaries_repo
+            # Vérifie si le fichier contient un contentHash (faux fichier JSON)
+            if raw.strip():
+                try:
+                    data = json.loads(raw)
+                    content_hash = data.get("contentHash")
+                    if content_hash:
+                        # Extraire le fichier binaire réel dans source_dir
+                        if extract_file_from_blob(content_hash, blob.path):
+                            # Copier le fichier binaire dans le nouveau dépôt
+                            source_file = os.path.join(source_dir, blob.path)
+                            target_file = os.path.join(new_repo.working_tree_dir, blob.path)
+
+                            # Vérifier si le fichier source existe avant de le copier
+                            if os.path.exists(source_file):
+                                os.makedirs(os.path.dirname(target_file), exist_ok=True)
+                                shutil.copy(source_file, target_file)
+                                new_repo.git.add(target_file)
+                            else:
+                                print(f"Erreur : Le fichier {source_file} est introuvable.")
+                                continue
+                except json.JSONDecodeError:
+                    print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
+                    continue
+
+    # Commiter dans le nouveau dépôt avec les métadonnées d'origine
+    author = commit.author
+    authored_date = datetime.fromtimestamp(commit.authored_date)
+    commit_message = commit.message
+
+    new_repo.index.commit(
+        commit_message,
+        author=author,
+        commit_date=authored_date.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    print(f"Commit recréé dans le nouveau dépôt : {commit_message} à la date {authored_date}")
+
 
 # Fonction pour effectuer le push vers le dépôt cible
 def push_to_target_repo(local_repo_dir, url_git, token):
@@ -102,7 +130,7 @@ def main():
 
         # Reconstruction du dépôt avec les binaires
         print("Reconstruction des commits avec les binaires...")
-        reconstruct_commits_with_binaries(json_repo_dir, binaries_repo_dir, project_info["project_id"])
+        recreate_commit_with_binaries(json_repo_dir, binaries_repo_dir)
 
         # Push vers la cible Git des binaires
         print("Push du dépôt binaire vers la cible...")
