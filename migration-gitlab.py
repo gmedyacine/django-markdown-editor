@@ -116,21 +116,29 @@ def push_to_target_repo(local_repo_dir, url_git, token):
     repo.create_remote('target', auth_url_git)
     repo.git.push('--mirror', 'target')  # Push avec mirroring complet
 
-# Fonction principale
+
 def main():
     project_info_list = read_project_info(csv_path)
     
     for project_info in project_info_list:
         print(f"Traitement du projet {project_info['project_id']}...")
 
-        # Clone du dépôt JSON
+        # Clonage du dépôt JSON
         print("Clonage du dépôt JSON...")
         json_repo_dir = os.path.join(local_repo_dir, project_info["project_id"])
         clone_json_repo(project_info["git_url_json"], project_info["token"], json_repo_dir)
 
-        # Reconstruction du dépôt avec les binaires
+        # Recréation du dépôt avec les binaires
         print("Reconstruction des commits avec les binaires...")
-        recreate_commit_with_binaries(json_repo_dir, binaries_repo_dir)
+        if os.path.exists(binaries_repo_dir):
+            shutil.rmtree(binaries_repo_dir)
+        os.makedirs(binaries_repo_dir)
+        new_repo = git.Repo.init(binaries_repo_dir)
+        old_repo = git.Repo(json_repo_dir)
+        
+        commits = list(old_repo.iter_commits('master'))  # Parcours de l'historique
+        for commit in reversed(commits):  # Rejouer dans l'ordre chronologique
+            recreate_commit_with_binaries(new_repo, commit, old_repo)
 
         # Push vers la cible Git des binaires
         print("Push du dépôt binaire vers la cible...")
