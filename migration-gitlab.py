@@ -110,11 +110,16 @@ def recreate_commit_with_binaries(new_repo, commit, repo):
 
 
 # Fonction pour effectuer le push vers le dépôt cible
-def push_to_target_repo(local_repo_dir, url_git, token):
-    auth_url_git = url_git.replace("https://", f"https://{token}@")
-    repo = git.Repo(local_repo_dir)
-    repo.create_remote('target', auth_url_git)
-    repo.git.push('--mirror', 'target')  # Push avec mirroring complet
+def push_to_target_repo(repo_dir, url_git, token):
+    try:
+        auth_url = url_git.replace("https://", f"https://{token}@")
+        repo = git.Repo(repo_dir)
+        repo.create_remote('target', auth_url)
+        repo.git.push('target', 'master', force=True)
+        print(f"Push vers le dépôt cible réussi : {url_git}")
+    except git.exc.GitCommandError as e:
+        print(f"Erreur lors du push vers {url_git}: {e}")
+        print("Passage au projet suivant.")
 
 
 def main():
