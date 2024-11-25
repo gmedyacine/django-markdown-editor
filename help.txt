@@ -58,35 +58,9 @@ echo "$issues_json" | jq -c '.[]' | while read issue; do
          "https://gitlab-dogen.group.echonet/api/v4/projects/74664/issues"
 done
 
-Voici une reformulation du mail en anglais pour préciser qu'il s'agit d'exemples d'utilisation :
 
-
----
-
-Subject: Confluence for Examples of Redis and IBM COS Usage
-
-Dear Sébastien,
-
-Please find below the Confluence links containing examples for connecting to and using Redis and IBM COS from Domino workspaces.
-
-These examples illustrate practical use cases and can serve as a reference for similar implementations:
-
-1. Redis Usage Example: [Insert Link]
-
-
-2. IBM COS Usage Example: [Insert Link]
-
-
-
-Should you have any questions or require further clarification, please don’t hesitate to reach out.
-
-Best regards,
-[Your Name]
-[Your Position]
-
-
----
-
-Cette version clarifie que les liens pointent vers des exemples pratiques, et non un guide complet.
+openssl req -new -newkey rsa:2048 -nodes -keyout certificat.key -out certificat.csr -subj "/C=FR/ST=92/L=Nanterre/O=BNP Paribas SA/OU=CARDIF/CN=991857/emailAddress=prenom.nom@bnpparibas.com"
+openssl x509 -req -days 365 -in certificat.csr -signkey certificat.key -out certificat.pem \
+-addext "extendedKeyUsage = clientAuth"
 
 
