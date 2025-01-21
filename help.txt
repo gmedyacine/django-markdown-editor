@@ -1,66 +1,12 @@
-#!/bin/bash
+Objet : Mise à disposition des buckets COS pour la prod et préprod CARDx
 
-issues_json=$(cat all_issues.json)
+Bonjour Sébastien,
 
-echo "$issues_json" | jq -c '.[]' | while read issue; do
-    id=$(echo $issue | jq -r '.id // empty')
-    project_id=$(echo $issue | jq -r '.project_id // empty')
-    title=$(echo $issue | jq -r '.title // ""')
-    description=$(echo $issue | jq -r '.description // ""')
-    state=$(echo $issue | jq -r '.state // ""')
-    created_at=$(echo $issue | jq -r '.created_at // ""')
-    updated_at=$(echo $issue | jq -r '.updated_at // ""')
-    closed_at=$(echo $issue | jq -r '.closed_at // ""')
-    closed_by=$(echo $issue | jq -r '.closed_by // ""')
-    labels=$(echo $issue | jq -r '.labels // [] | join(",")')
-    milestones=$(echo $issue | jq -r '.milestones // [] | join(",")')
-    assignees=$(echo $issue | jq -r '.assignees // [] | join(",")')
-    author=$(echo $issue | jq -r '.author // ""')
-    type=$(echo $issue | jq -r '.type // ""')
-    assignee=$(echo $issue | jq -r '.assignee // ""')
-    user_notes_count=$(echo $issue | jq -r '.user_notes_count // 0')
-    merge_requests_count=$(echo $issue | jq -r '.merge_requests_count // 0')
-    upvotes=$(echo $issue | jq -r '.upvotes // 0')
-    downvotes=$(echo $issue | jq -r '.downvotes // 0')
-    due_date=$(echo $issue | jq -r '.due_date // ""')
-    confidential=$(echo $issue | jq -r '.confidential // false')
-    discussion_locked=$(echo $issue | jq -r '.discussion_locked // false')
-    issue_type=$(echo $issue | jq -r '.issue_type // ""')
-    web_url=$(echo $issue | jq -r '.web_url // ""')
-    time_stats=$(echo $issue | jq -r '.time_stats // ""')
-    task_completion_status=$(echo $issue | jq -r '.task_completion_status // ""')
-    blocking_issues_count=$(echo $issue | jq -r '.blocking_issues_count // 0')
-    has_tasks=$(echo $issue | jq -r '.has_tasks // false')
-    task_status=$(echo $issue | jq -r '.task_status // ""')
-    links=$(echo $issue | jq -r '._links // ""')
-    references=$(echo $issue | jq -r '.references // ""')
-    severity=$(echo $issue | jq -r '.severity // ""')
-    moved_to_id=$(echo $issue | jq -r '.moved_to_id // ""')
-    service_desk_reply_to=$(echo $issue | jq -r '.service_desk_reply_to // ""')
+Je vous informe que les buckets COS pour la production et la préproduction de CARDx sont désormais disponibles sur Domino en production.
 
-    curl -X POST --header "PRIVATE-TOKEN: <your_private_token>" \
-         --data "title=$title" --data "description=$description" \
-         --data "state=$state" --data "created_at=$created_at" \
-         --data "updated_at=$updated_at" --data "closed_at=$closed_at" \
-         --data "closed_by=$closed_by" --data "labels=$labels" \
-         --data "milestones=$milestones" --data "assignees=$assignees" \
-         --data "author=$author" --data "type=$type" \
-         --data "assignee=$assignee" --data "user_notes_count=$user_notes_count" \
-         --data "merge_requests_count=$merge_requests_count" --data "upvotes=$upvotes" \
-         --data "downvotes=$downvotes" --data "due_date=$due_date" \
-         --data "confidential=$confidential" --data "discussion_locked=$discussion_locked" \
-         --data "issue_type=$issue_type" --data "web_url=$web_url" \
-         --data "time_stats=$time_stats" --data "task_completion_status=$task_completion_status" \
-         --data "blocking_issues_count=$blocking_issues_count" --data "has_tasks=$has_tasks" \
-         --data "task_status=$task_status" --data "links=$links" \
-         --data "references=$references" --data "severity=$severity" \
-         --data "moved_to_id=$moved_to_id" --data "service_desk_reply_to=$service_desk_reply_to" \
-         "https://gitlab-dogen.group.echonet/api/v4/projects/74664/issues"
-done
+Vous trouverez ci-joint un tableau récapitulatif détaillant les différents éléments livrés. Les secrets associés à ces deux buckets ont été enregistrés dans les variables d'environnement de chaque projet concerné.
 
+N'hésitez pas à me contacter si vous avez des questions ou besoin d'informations supplémentaires.
 
-openssl req -new -newkey rsa:2048 -nodes -keyout certificat.key -out certificat.csr -subj "/C=FR/ST=92/L=Nanterre/O=BNP Paribas SA/OU=CARDIF/CN=991857/emailAddress=prenom.nom@bnpparibas.com"
-openssl x509 -req -days 365 -in certificat.csr -signkey certificat.key -out certificat.pem \
--addext "extendedKeyUsage = clientAuth"
-
-
+Cordialement,
+[Votre nom]
