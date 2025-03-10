@@ -56,3 +56,37 @@ try:
 
 except Exception as e:
     print(f"Error: {e}")
+
+import os
+import ibm_boto3
+from ibm_botocore.client import Config
+
+# Paramètres d’exemple
+HMAC_ACCESS_KEY_ID = "VOTRE_ACCESS_KEY"
+HMAC_SECRET_ACCESS_KEY = "VOTRE_SECRET_KEY"
+ENDPOINT_URL = "https://s3.eu-fr2.cloud-object-storage.appdomain.cloud"
+BUCKET_NAME = "votre_bucket"
+OBJECT_KEY = "nom-de-fichier-dans-le-bucket.txt"
+LOCAL_PATH = "/data/nom-de-fichier-local.txt"  # Chemin local où vous voulez télécharger
+
+# Création du client S3
+cos_client = ibm_boto3.client(
+    "s3",
+    aws_access_key_id=HMAC_ACCESS_KEY_ID,
+    aws_secret_access_key=HMAC_SECRET_ACCESS_KEY,
+    config=Config(signature_version="s3v4"),
+    endpoint_url=ENDPOINT_URL
+)
+
+def download_single_file():
+    # S'assure que le répertoire /data existe (au besoin)
+    os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
+    
+    try:
+        cos_client.download_file(BUCKET_NAME, OBJECT_KEY, LOCAL_PATH)
+        print(f"Fichier '{OBJECT_KEY}' téléchargé avec succès dans '{LOCAL_PATH}'.")
+    except Exception as e:
+        print(f"Erreur lors du téléchargement : {e}")
+
+# Appel de la fonction
+download_single_file()
