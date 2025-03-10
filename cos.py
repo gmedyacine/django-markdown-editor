@@ -78,13 +78,29 @@ cos_client = ibm_boto3.client(
     endpoint_url=ENDPOINT_URL
 )
 
-def download_single_file():
-    # S'assure que le répertoire /data existe (au besoin)
+def download_single_file_with_timing():
+    """Télécharge un fichier depuis IBM COS et mesure le temps écoulé."""
     os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
     
     try:
+        start_time = time.time()
+        
         cos_client.download_file(BUCKET_NAME, OBJECT_KEY, LOCAL_PATH)
+        
+        end_time = time.time()
+        elapsed = end_time - start_time
+        
         print(f"Fichier '{OBJECT_KEY}' téléchargé avec succès dans '{LOCAL_PATH}'.")
+        print(f"Temps de téléchargement : {elapsed:.2f} secondes.")
+        
+        # Si vous voulez calculer le débit, vous pouvez mesurer la taille du fichier local
+        file_size_bytes = os.path.getsize(LOCAL_PATH)
+        mb_size = file_size_bytes / (1024 * 1024)
+        print(f"Taille du fichier : {mb_size:.2f} MB")
+        if elapsed > 0:
+            throughput = mb_size / elapsed
+            print(f"Débit approx. : {throughput:.2f} MB/s")
+        
     except Exception as e:
         print(f"Erreur lors du téléchargement : {e}")
 
