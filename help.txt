@@ -1,12 +1,13 @@
-Objet : Mise à disposition des buckets COS pour la prod et préprod CARDx
+# 1. Installer les outils nécessaires pour gérer les locales
+RUN apt-get update && \
+    apt-get install -y locales && \
+    rm -rf /var/lib/apt/lists/*
 
-Bonjour Sébastien,
+# 2. Générer la locale en_US.UTF-8 (ou celle de votre choix)
+RUN sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
 
-Je vous informe que les buckets COS pour la production et la préproduction de CARDx sont désormais disponibles sur Domino en production.
-
-Vous trouverez ci-joint un tableau récapitulatif détaillant les différents éléments livrés. Les secrets associés à ces deux buckets ont été enregistrés dans les variables d'environnement de chaque projet concerné.
-
-N'hésitez pas à me contacter si vous avez des questions ou besoin d'informations supplémentaires.
-
-Cordialement,
-[Votre nom]
+# 3. Définir les variables d’environnement
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
