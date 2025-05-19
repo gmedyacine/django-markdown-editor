@@ -11,3 +11,17 @@ RUN sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
+
+
+    broker_use_ssl={
+        "ssl_ca_certs": cert_path,
+        "ssl_cert_reqs": "required",
+    },
+    # Heartbeats -- mêmes valeurs partout
+    broker_heartbeat          = 30,
+    broker_heartbeat_checkrate = 2,
+    worker_heartbeat          = 30,
+    worker_lost_wait          = 40,
+    # Perf
+    worker_prefetch_multiplier = 1,
+    worker_disable_rate_limits = True,
