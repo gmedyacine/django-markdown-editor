@@ -1,37 +1,61 @@
 #!/usr/bin/env python3
 """cos_sync.py
 
-Synchronise a local folder with a single IBM Cloud Object Storage (COS) bucket.
-Only new or updated objects are downloaded. Intended to be triggered via cron
-for one‑way sync (COS ➜ local dataset).
+Synchronise a local folder with selected objects from an IBM Cloud Object Storage (COS) bucket.
+Designed for cron‑based, **one‑way** sync (COS ➜ local dataset).
 
-Environment variables expected:
-  • COS_ENDPOINT              – e.g. "https://s3.eu-de.cloud-object-storage.appdomain.cloud"
-  • COS_ACCESS_KEY_ID         – HMAC access key
-  • COS_SECRET_ACCESS_KEY     – HMAC secret key
-  • COS_BUCKET_NAME           – Bucket to sync from
-  • COS_PREFIX          (opt) – Restrict sync to objects starting with this prefix
-  • DATASET_DIR         (opt) – Local directory for download (default: /mnt/dataset/XXX)
+Key features
+------------
+* **Incremental** – downloads only new / updated objects.
+* **Selective**   – you can provide an explicit list of objects to fetch.
+* **Prefix**      – or restrict to a common prefix (default behaviour).
+* **Progress bar** with *tqdm*.
+
+Environment variables expected
+------------------------------
+Required
+^^^^^^^^
+* `COS_ENDPOINT`              – e.g. `https://s3.eu-de.cloud-object-storage.appdomain.cloud`
+* `COS_ACCESS_KEY_ID`         – HMAC access key
+* `COS_SECRET_ACCESS_KEY`     – HMAC secret key
+* `COS_BUCKET_NAME`           – Name of the bucket to sync from
+
+Selection (choose ONE method)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+* `COS_OBJECT_KEYS`           – Comma‑separated list of object keys to fetch
+      *or*
+* `COS_KEYS_FILE`             – Path to a text file containing one key per line
+      *or*
+* `COS_PREFIX`                – Restrict sync to objects starting with this prefix (default="")
+
+Miscellaneous
+^^^^^^^^^^^^^
+* `DATASET_DIR`               – Local target directory (default: `/mnt/dataset/XXX`)
 
 Install requirements (once):
     pip install ibm-cos-sdk==2.* tqdm
 
-Add to crontab, e.g. every hour:
-    0 * * * * /usr/bin/env python3 /opt/scripts/cos_sync.py >> /var/log/cos_sync.log 2>&1
+Cron example (sync every hour):
+    0 * * * * COS_ENDPOINT=… COS_ACCESS_KEY_ID=… COS_SECRET_ACCESS_KEY=… COS_BUCKET_NAME=… COS_KEYS_FILE=/opt/scripts/my_keys.txt /usr/bin/env python3 /opt/scripts/cos_sync.py >> /var/log/cos_sync.log 2>&1
 """
+
+from __future__ import annotations
 
 import os
 import sys
 import logging
 from pathlib import Path
 from datetime import timezone
-from typing import Dict, Any
+from typing import Dict, Any, Iterable, List
 
 import ibm_boto3
 from ibm_botocore.client import Config
 from ibm_botocore.exceptions import ClientError
 from tqdm import tqdm
 
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -40,10 +64,10 @@ logging.basicConfig(
 LOGGER = logging.getLogger("cos_sync")
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helper functions
 # ---------------------------------------------------------------------------
 
-def getenv(name: str, default: str | None = None, required: bool = False) -> str:
+def getenv(name: str, default: str | None = None, *, required: bool = False) -> str | None:
     value = os.getenv(name, default)
     if required and not value:
         LOGGER.error("Environment variable %s is required", name)
@@ -65,18 +89,77 @@ def create_cos_client():
     )
 
 
-def object_needs_download(obj: Dict[str, Any], local_path: Path) -> bool:
-    """Return True if object is absent locally or newer than local copy."""
+def read_key_list() -> list[str] | None:
+    """Return an explicit list of object keys if provided, otherwise None."""
+    csv_env = getenv("COS_OBJECT_KEYS")
+    file_env = getenv("COS_KEYS_FILE")
+
+    if csv_env and file_env:
+        LOGGER.error("Specify only one of COS_OBJECT_KEYS or COS_KEYS_FILE, not both.")
+        sys.exit(1)
+
+    if csv_env:
+        return [k.strip() for k in csv_env.split(",") if k.strip()]
+
+    if file_env:
+        path = Path(file_env).expanduser()
+        if not path.is_file():
+            LOGGER.error("COS_KEYS_FILE %s not found", path)
+            sys.exit(1)
+        return [line.strip() for line in path.read_text().splitlines() if line.strip()]
+
+    return None  # fall back to prefix walk
+
+
+def object_needs_download(remote_ts: float, local_path: Path) -> bool:
+    """Return True if object is absent locally or remote is newer."""
     if not local_path.exists():
         return True
-    # Compare modification timestamps (seconds precision is enough).
-    remote_ts = obj["LastModified"].astimezone(timezone.utc).timestamp()
     local_ts = local_path.stat().st_mtime
-    return remote_ts > local_ts + 1  # small margin
+    return remote_ts > local_ts + 1  # allow 1‑second margin
 
 # ---------------------------------------------------------------------------
-# Main sync routine
+# Main sync logic
 # ---------------------------------------------------------------------------
+
+def download_object(client, bucket: str, key: str, target: Path) -> bool:
+    """Download a single object if necessary. Returns True if downloaded."""
+    try:
+        meta = client.head_object(Bucket=bucket, Key=key)
+    except ClientError as err:
+        LOGGER.error("Failed head_object for %s: %s", key, err)
+        return False
+
+    remote_size = meta["ContentLength"]
+    remote_ts = meta["LastModified"].astimezone(timezone.utc).timestamp()
+
+    if not object_needs_download(remote_ts, target):
+        return False  # already up‑to‑date
+
+    LOGGER.info("Downloading %s (%d bytes)", key, remote_size)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    with tqdm(total=remote_size, unit="B", unit_scale=True, desc=key, leave=False) as bar:
+        client.download_file(
+            Bucket=bucket,
+            Key=key,
+            Filename=str(target),
+            Callback=bar.update,
+        )
+
+    os.utime(target, (remote_ts, remote_ts))
+    return True
+
+
+def paginator_keys(client, bucket: str, prefix: str) -> Iterable[str]:
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith("/"):
+                continue
+            yield key
+
 
 def sync_bucket():
     bucket = getenv("COS_BUCKET_NAME", required=True)
@@ -84,44 +167,28 @@ def sync_bucket():
     dest_dir = Path(getenv("DATASET_DIR", "/mnt/dataset/XXX")).expanduser()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
+    selected_keys = read_key_list()
+
     client = create_cos_client()
-    paginator = client.get_paginator("list_objects_v2")
 
-    LOGGER.info("Starting sync from bucket '%s' (prefix '%s') to '%s'", bucket, prefix, dest_dir)
+    if selected_keys is None:
+        LOGGER.info("Sync mode: prefix walk (prefix='%s')", prefix)
+        keys_iter: Iterable[str] = paginator_keys(client, bucket, prefix)
+    else:
+        LOGGER.info("Sync mode: explicit list (%d keys)", len(selected_keys))
+        keys_iter = selected_keys
 
-    total_downloaded = 0
-    try:
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if key.endswith("/"):  # skip folders (zero‑byte placeholders)
-                    continue
-                # Build local path mirroring the key structure
-                target = dest_dir / key
-                target.parent.mkdir(parents=True, exist_ok=True)
+    downloads = 0
+    for key in keys_iter:
+        target = dest_dir / key
+        if download_object(client, bucket, key, target):
+            downloads += 1
 
-                if object_needs_download(obj, target):
-                    LOGGER.info("Downloading %s -> %s", key, target)
-                    with tqdm(total=obj["Size"], unit="B", unit_scale=True, desc=key, leave=False) as bar:
-                        def _callback(bytes_amount):
-                            bar.update(bytes_amount)
-
-                        client.download_file(
-                            Bucket=bucket,
-                            Key=key,
-                            Filename=str(target),
-                            Callback=_callback,
-                        )
-                    # Preserve mtime to the object timestamp
-                    mtime = obj["LastModified"].astimezone(timezone.utc).timestamp()
-                    os.utime(target, (mtime, mtime))
-                    total_downloaded += 1
-    except ClientError as err:
-        LOGGER.error("IBM COS ClientError: %s", err)
-        sys.exit(2)
-
-    LOGGER.info("Sync completed – %d object(s) updated", total_downloaded)
+    LOGGER.info("Sync finished – %d object(s) updated", downloads)
 
 
 if __name__ == "__main__":
-    sync_bucket()
+    try:
+        sync_bucket()
+    except KeyboardInterrupt:
+        LOGGER.warning("Interrupted by user")
