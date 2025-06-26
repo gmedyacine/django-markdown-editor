@@ -1,0 +1,102 @@
+h1. IBM COS → Domino Dataset Synchronization
+
+*Page owner:* {{@your‑team}}
+
+---
+
+h2. 1  Overview
+This script incrementally synchronises objects stored in an IBM Cloud Object Storage (COS) bucket to a Domino dataset.  It is designed for *one‑way* mirroring (COS ➜ Domino) and can be called manually or via *cron*.  Only new or updated objects are downloaded, minimising bandwidth and execution time.
+
+* Current dataset: **cos‑edd‑sync**
+* Default target path inside a workspace: */mnt/dataset/XXX* (override with `DATASET_DIR`).
+
+---
+
+h2. 2  Quick start
+\# Ensure the dataset **cos‑edd‑sync** is mounted in your workspace.
+\# Install requirements once:
+`{% raw %}`pip install ibm-cos-sdk tqdm{% endraw %}\`
+\# Set the mandatory environment variables and run:
+
+```
+export COS_ENDPOINT="https://s3.eu-de.cloud-object-storage.appdomain.cloud"
+export COS_ACCESS_KEY_ID="<access>"         # HMAC key
+export COS_SECRET_ACCESS_KEY="<secret>"     # HMAC secret
+export COS_BUCKET_NAME="<bucket>"
+export COS_PREFIX="domino/"                # or leave blank
+python3 cos_sync.py --mode sync
+```
+
+---
+
+h2. 3  Environment variables
+
+| Variable                | Required | Purpose                                               |
+| ----------------------- | -------- | ----------------------------------------------------- |
+| `COS_ENDPOINT`          | ✔        | COS endpoint URL (region‑specific)                    |
+| `COS_ACCESS_KEY_ID`     | ✔        | HMAC access key                                       |
+| `COS_SECRET_ACCESS_KEY` | ✔        | HMAC secret key                                       |
+| `COS_BUCKET_NAME`       | ✔        | Name of the bucket to mirror                          |
+| `COS_PREFIX`            |          | Limit sync to this prefix (e.g. `domino/`)            |
+| `COS_OBJECT_KEYS`       |          | Comma‑separated list of individual keys               |
+| `COS_KEYS_FILE`         |          | File containing one key per line                      |
+| `DATASET_DIR`           |          | Local destination folder (default `/mnt/dataset/XXX`) |
+
+`COS_OBJECT_KEYS`, `COS_KEYS_FILE` and `COS_PREFIX` are *mutually exclusive* – set **one** only.
+
+---
+
+h2. 4  Modes
+
+* **sync** (default) – mirror COS to the dataset.
+* **tree** – print an indented object tree (useful to inspect prefixes).
+* **map** – print a *source ➜ destination* mapping table.
+
+Run with, for example:
+`python3 cos_sync.py --mode tree`
+
+---
+
+h2. 5  Scheduling with cron
+Synchronise every hour:
+
+```
+0 * * * * COS_ENDPOINT=… COS_ACCESS_KEY_ID=… COS_SECRET_ACCESS_KEY=… \
+          COS_BUCKET_NAME=… COS_PREFIX=domino/ \
+          /usr/bin/python3 /opt/scripts/cos_sync.py --mode sync >> /var/log/cos_sync.log 2>&1
+```
+
+Logs are appended in */var/log/cos\_sync.log*.
+
+---
+
+h2. 6  Extending / Re‑using
+
+* Download *selected* keys only – define `COS_OBJECT_KEYS` / `COS_KEYS_FILE`.
+* Change destination folder (`DATASET_DIR`) to create multiple mirrors.
+* Combine with **Vault** or **Domino environment variables** to keep credentials out of source control.
+
+---
+
+h2. 7  Troubleshooting
+
+| Symptom             | Likely cause                                                       | Fix                                                                         |
+| ------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `404 NoSuchKey`     | Wrong prefix / key list includes bucket name                       | Use `--mode tree` to inspect exact keys and adjust `COS_PREFIX` or key list |
+| No files downloaded | `COS_PREFIX` too restrictive or credentials lack *List* permission | Verify IAM/HVault policy and prefix                                         |
+| Slow sync           | Very large objects; first run downloads everything                 | Subsequent runs transfer only deltas                                        |
+
+---
+
+h2. 8  Repository
+The script lives in GitLab: *{{link\_to\_repo}}*
+Feel free to open merge requests for improvements or additional features.
+
+---
+
+h2. 9  Maintainers
+*Primary contact:* {{@your‑name}}
+
+---
+
+*Last updated:* {date}
