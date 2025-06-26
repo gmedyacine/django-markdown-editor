@@ -1,46 +1,61 @@
 #!/usr/bin/env python3
 """cos_sync.py
 
-Synchronise a local folder with selected objects from an IBM Cloud Object Storage (COS) bucket.
-Designed for cron‑based, **one‑way** sync (COS ➜ local dataset).
+Synchronise a local dataset with **selected objects** from an IBM Cloud Object Storage
+(COS) bucket *or* simply inspect the bucket hierarchy.
 
-Key features
-------------
-* **Incremental** – downloads only new / updated objects.
-* **Selective**   – you can provide an explicit list of objects to fetch.
-* **Prefix**      – or restrict to a common prefix (default behaviour).
-* **Progress bar** with *tqdm*.
+Main modes
+~~~~~~~~~~
+* **sync**  (default) – one‑way sync **COS ➜ local**; downloads only new/updated files.
+* **tree**             – prints a pretty, indented tree of objects/prefixes.
+* **map**              – prints a 2‑column list: `s3://bucket/key  →  /local/path`.
 
-Environment variables expected
-------------------------------
+Choose the mode with the `--mode` CLI option (or via CRON by passing the flag).
+
+Environment variables
+---------------------
 Required
 ^^^^^^^^
 * `COS_ENDPOINT`              – e.g. `https://s3.eu-de.cloud-object-storage.appdomain.cloud`
 * `COS_ACCESS_KEY_ID`         – HMAC access key
 * `COS_SECRET_ACCESS_KEY`     – HMAC secret key
-* `COS_BUCKET_NAME`           – Name of the bucket to sync from
+* `COS_BUCKET_NAME`           – Bucket to work with
 
-Selection (choose ONE method)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-* `COS_OBJECT_KEYS`           – Comma‑separated list of object keys to fetch
-      *or*
-* `COS_KEYS_FILE`             – Path to a text file containing one key per line
-      *or*
-* `COS_PREFIX`                – Restrict sync to objects starting with this prefix (default="")
+Selection (pick ONE mechanism)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+* `COS_OBJECT_KEYS`           – Comma‑separated list of keys to process
+  **or**
+* `COS_KEYS_FILE`             – Text file with one key per line
+  **or**
+* `COS_PREFIX`                – Common prefix (default="")
 
-Miscellaneous
-^^^^^^^^^^^^^
+Misc
+^^^^
 * `DATASET_DIR`               – Local target directory (default: `/mnt/dataset/XXX`)
 
 Install requirements (once):
     pip install ibm-cos-sdk==2.* tqdm
 
-Cron example (sync every hour):
-    0 * * * * COS_ENDPOINT=… COS_ACCESS_KEY_ID=… COS_SECRET_ACCESS_KEY=… COS_BUCKET_NAME=… COS_KEYS_FILE=/opt/scripts/my_keys.txt /usr/bin/env python3 /opt/scripts/cos_sync.py >> /var/log/cos_sync.log 2>&1
+Examples
+~~~~~~~~
+* **Tree view** of everything under `domino/`:
+    ```bash
+    export COS_PREFIX="domino/"
+    python3 cos_sync.py --mode tree
+    ```
+* **Sync** explicit list:
+    ```bash
+    export COS_OBJECT_KEYS="domino/A.csv,domino/B.csv"
+    python3 cos_sync.py --mode sync
+    ```
+* **Cron** every night at 02:00:
+    ```cron
+    0 2 * * * COS_ENDPOINT=… COS_ACCESS_KEY_ID=… COS_SECRET_ACCESS_KEY=… COS_BUCKET_NAME=… COS_PREFIX=domino/ /usr/bin/python3 /opt/scripts/cos_sync.py --mode sync >> /var/log/cos_sync.log 2>&1
+    ```
 """
-
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import logging
@@ -88,9 +103,10 @@ def create_cos_client():
         endpoint_url=endpoint,
     )
 
+# -------------------------- Selection helpers --------------------------------
 
 def read_key_list() -> list[str] | None:
-    """Return an explicit list of object keys if provided, otherwise None."""
+    """Return an explicit list of object keys, or None if we fall back to prefix."""
     csv_env = getenv("COS_OBJECT_KEYS")
     file_env = getenv("COS_KEYS_FILE")
 
@@ -110,20 +126,37 @@ def read_key_list() -> list[str] | None:
 
     return None  # fall back to prefix walk
 
+# ---------------------------- Tree utilities ---------------------------------
+
+def build_tree(keys: Iterable[str]) -> dict:
+    root: dict = {}
+    for key in keys:
+        parts = key.split("/")
+        node = root
+        for part in parts:
+            node = node.setdefault(part, {})
+    return root
+
+
+def print_tree(node: dict, indent: str = "") -> None:
+    entries = sorted(node.items())
+    for idx, (name, subtree) in enumerate(entries):
+        is_last = idx == len(entries) - 1
+        branch = "└── " if is_last else "├── "
+        print(indent + branch + name)
+        if subtree:
+            extension = "    " if is_last else "│   "
+            print_tree(subtree, indent + extension)
+
+# --------------------------- Sync helpers ------------------------------------
 
 def object_needs_download(remote_ts: float, local_path: Path) -> bool:
-    """Return True if object is absent locally or remote is newer."""
     if not local_path.exists():
         return True
-    local_ts = local_path.stat().st_mtime
-    return remote_ts > local_ts + 1  # allow 1‑second margin
+    return remote_ts > local_path.stat().st_mtime + 1
 
-# ---------------------------------------------------------------------------
-# Main sync logic
-# ---------------------------------------------------------------------------
 
 def download_object(client, bucket: str, key: str, target: Path) -> bool:
-    """Download a single object if necessary. Returns True if downloaded."""
     try:
         meta = client.head_object(Bucket=bucket, Key=key)
     except ClientError as err:
@@ -134,11 +167,10 @@ def download_object(client, bucket: str, key: str, target: Path) -> bool:
     remote_ts = meta["LastModified"].astimezone(timezone.utc).timestamp()
 
     if not object_needs_download(remote_ts, target):
-        return False  # already up‑to‑date
+        return False
 
     LOGGER.info("Downloading %s (%d bytes)", key, remote_size)
     target.parent.mkdir(parents=True, exist_ok=True)
-
     with tqdm(total=remote_size, unit="B", unit_scale=True, desc=key, leave=False) as bar:
         client.download_file(
             Bucket=bucket,
@@ -146,10 +178,11 @@ def download_object(client, bucket: str, key: str, target: Path) -> bool:
             Filename=str(target),
             Callback=bar.update,
         )
-
     os.utime(target, (remote_ts, remote_ts))
     return True
 
+
+# --------------------------- Paginator wrapper --------------------------------
 
 def paginator_keys(client, bucket: str, prefix: str) -> Iterable[str]:
     paginator = client.get_paginator("list_objects_v2")
@@ -160,35 +193,62 @@ def paginator_keys(client, bucket: str, prefix: str) -> Iterable[str]:
                 continue
             yield key
 
+# ---------------------------------------------------------------------------
+# Main routines: tree, map, sync
+# ---------------------------------------------------------------------------
 
-def sync_bucket():
+def run_tree(client, bucket: str, keys_iter: Iterable[str]):
+    tree = build_tree(keys_iter)
+    print_tree(tree)
+
+
+def run_map(dest_dir: Path, keys_iter: Iterable[str]):
+    for key in keys_iter:
+        print(f"s3://{key} -> {dest_dir / key}")
+
+
+def run_sync(client, bucket: str, dest_dir: Path, keys_iter: Iterable[str]):
+    downloads = 0
+    for key in keys_iter:
+        if download_object(client, bucket, key, dest_dir / key):
+            downloads += 1
+    LOGGER.info("Sync complete – %d object(s) downloaded/updated", downloads)
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="COS sync & inspect tool")
+    parser.add_argument("--mode", choices=["sync", "tree", "map"], default="sync",
+                        help="Action to perform (default: sync)")
+    args = parser.parse_args()
+
     bucket = getenv("COS_BUCKET_NAME", required=True)
     prefix = getenv("COS_PREFIX", "")
     dest_dir = Path(getenv("DATASET_DIR", "/mnt/dataset/XXX")).expanduser()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    selected_keys = read_key_list()
-
+    explicit_keys = read_key_list()
     client = create_cos_client()
 
-    if selected_keys is None:
-        LOGGER.info("Sync mode: prefix walk (prefix='%s')", prefix)
+    if explicit_keys is None:
         keys_iter: Iterable[str] = paginator_keys(client, bucket, prefix)
     else:
-        LOGGER.info("Sync mode: explicit list (%d keys)", len(selected_keys))
-        keys_iter = selected_keys
+        keys_iter = explicit_keys
 
-    downloads = 0
-    for key in keys_iter:
-        target = dest_dir / key
-        if download_object(client, bucket, key, target):
-            downloads += 1
-
-    LOGGER.info("Sync finished – %d object(s) updated", downloads)
+    if args.mode == "tree":
+        run_tree(client, bucket, keys_iter)
+    elif args.mode == "map":
+        run_map(dest_dir, keys_iter)
+    elif args.mode == "sync":
+        run_sync(client, bucket, dest_dir, keys_iter)
+    else:
+        parser.error("Unknown mode")
 
 
 if __name__ == "__main__":
     try:
-        sync_bucket()
+        main()
     except KeyboardInterrupt:
         LOGGER.warning("Interrupted by user")
