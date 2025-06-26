@@ -1,0 +1,17 @@
+Bonjour David, bonjour Virginie,
+
+Les fichiers CSV issus de l’instance COS sont désormais synchronisés dans Domino, dataset cos-edd-sync.
+Le script cos_sync.py (lien ci-dessus) exécute une synchronisation unidirectionnelle complète depuis le bucket vers ce dataset ; il peut donc être réutilisé pour d’autres besoins data.
+
+Pour finaliser les droits, il me manque uniquement :
+
+le nom de l’organisation Domino (ou l’UI) qui aura besoin d’accéder à ces données.
+
+Dès réception, j’ajouterai la règle d’autorisation correspondante.
+
+Plus de détails (variables d’environnement, modes, cron, etc.) se trouvent dans la page Confluence liée.
+
+Merci d’avance pour votre retour.
+
+Cordialement,
+Yassine
