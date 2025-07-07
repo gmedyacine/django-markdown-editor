@@ -1,116 +1,128 @@
-import os
-import shutil
-import zipfile
-import json
-import git
-from datetime import datetime
+#!/usr/bin/env python3
+"""network_test.py
 
-# Chemin du répertoire où sont stockés les blobs (ZIP ou autres)
-blob_store_dir = "/path/to/blob/store"
-# Créer un répertoire temporaire vide pour les fichiers extraits
-source_dir = "/path/to/empty/folder"  # Ce dossier contiendra les vrais binaires
+Run connectivity diagnostics (ping, traceroute, telnet/nc, netstat) from a Domino workspace
+and log all outputs to *response.log*.
 
-# Nouveau dossier où recréer le dépôt avec les bons binaires
-new_repo_path = "/path/to/new/repo"
+Features
+========
+* Verifies that required tools are available; installs them via *dnf/yum* (RHEL/CentOS) or *apt* (Debian/Ubuntu) if missing.
+* Accepts a list of target hosts/ports via CLI or environment variable.
+* Executes, timestamps and captures the output of:
+  - `ping -c 4`  (ICMP reachability)
+  - `traceroute` (path)
+  - `nc -vz` or `telnet` (TCP port test)
+  - `netstat -rn` (routing table) + `ip addr` (interfaces)
+* Writes a consolidated **response.log** in the current directory.
 
-# S'assurer que le répertoire temporaire pour les binaires est vide
-if os.path.exists(source_dir):
-    shutil.rmtree(source_dir)
-os.makedirs(source_dir)
+Usage
+-----
+```
+python3 network_test.py --targets bu002104645.svc-np.paas.echonet:4202 bu002104644.svc-np.paas.echonet:4201
+```
+If --targets is omitted, the script reads `TARGETS` env var (comma‑separated host[:port]).
 
-def extract_file_from_blob(content_hash, target_file):
-    """ Extrait le fichier binaire réel depuis les blobs (ZIP ou autres) dans un répertoire temporaire. """
-    subdir = content_hash[:2]  # Première partie du contentHash pour organiser les blobs
-    blob_path = os.path.join(blob_store_dir, subdir, content_hash)
+The tool uses *sudo* (if available) to install missing packages; if the workspace is
+non‑privileged, installation steps are skipped with a warning.
+"""
+from __future__ import annotations
+import argparse, subprocess, shutil, sys, os, datetime, platform, logging
+from pathlib import Path
 
-    print(f"Chemin du blob : {blob_path}")
+LOG_FILE = Path("response.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger("nettest")
 
-    if os.path.exists(blob_path):
-        # Vérifie si c'est un fichier ZIP ou un fichier normal
-        if blob_path.endswith(".zip"):
-            with zipfile.ZipFile(blob_path, 'r') as zip_ref:
-                zip_ref.extractall(source_dir)
-            print(f"Extrait {target_file} depuis {blob_path}")
-        else:
-            # Crée les répertoires cibles s'ils n'existent pas
-            full_target_path = os.path.join(source_dir, target_file)
-            os.makedirs(os.path.dirname(full_target_path), exist_ok=True)  # S'assure que les répertoires existent
+# ---------------------- utility helpers ------------------------------------
 
-            # Copier le fichier directement
-            with open(blob_path, 'rb') as src, open(full_target_path, 'wb') as dest:
-                dest.write(src.read())
-            print(f"Copié {target_file} depuis {blob_path} vers {full_target_path}")
-        return True
+def run(cmd: list[str], label: str):
+    logger.info("=== %s : %s ===", label, " ".join(cmd))
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=60)
+        logger.info(out)
+    except subprocess.CalledProcessError as e:
+        logger.error("Command failed with code %s", e.returncode)
+        logger.error(e.output)
+    except FileNotFoundError:
+        logger.error("%s not found", cmd[0])
+    except subprocess.TimeoutExpired:
+        logger.error("Command %s timed out", cmd[0])
+
+
+def which_or_install(name: str, packages: list[str]):
+    if shutil.which(name):
+        return
+    logger.warning("%s not installed; attempting automatic install…", name)
+    installer = None
+    if shutil.which("apt-get"):
+        installer = ["sudo", "apt-get", "update"], ["sudo", "apt-get", "-y", "install"] + packages
+    elif shutil.which("dnf"):
+        installer = ["sudo", "dnf", "-y", "install"] + packages,
+    elif shutil.which("yum"):
+        installer = ["sudo", "yum", "-y", "install"] + packages,
     else:
-        print(f"Blob introuvable : {blob_path}")
-        return False
+        logger.error("No package manager found – install %s manually", ", ".join(packages))
+        return
+    for cmd in installer:
+        try:
+            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logger.error("Auto‑install failed: %s", e)
+            break
 
-def recreate_commit_with_binaries(new_repo, commit, repo):
-    """ Recrée le commit avec les fichiers binaires dans le nouveau dépôt, avec les métadonnées du commit d'origine. """
-    repo.git.checkout(commit)  # Se positionner sur le commit en question
-    tree = commit.tree
-
-    # Parcourir les fichiers dans ce commit et les remplacer par les bons binaires
-    for blob in tree.traverse():
-        if blob.type == 'blob':
-            raw = blob.data_stream.read().decode('utf-8')
-
-            # Vérifie si le fichier contient un contentHash (faux fichier JSON)
-            if raw.strip():
-                try:
-                    data = json.loads(raw)
-                    content_hash = data.get("contentHash")
-                    if content_hash:
-                        # Extraire le fichier binaire réel dans source_dir
-                        if extract_file_from_blob(content_hash, blob.path):
-                            # Copier le fichier binaire dans le nouveau dépôt
-                            source_file = os.path.join(source_dir, blob.path)
-                            target_file = os.path.join(new_repo.working_tree_dir, blob.path)
-
-                            # Vérifier si le fichier source existe avant de le copier
-                            if os.path.exists(source_file):
-                                os.makedirs(os.path.dirname(target_file), exist_ok=True)
-                                shutil.copy(source_file, target_file)
-                                new_repo.git.add(target_file)
-                            else:
-                                print(f"Erreur : Le fichier {source_file} est introuvable.")
-                                continue
-                except json.JSONDecodeError:
-                    print(f"Le fichier {blob.path} ne contient pas de JSON valide, on passe.")
-                    continue
-
-    # Commiter dans le nouveau dépôt avec les métadonnées d'origine
-    author = commit.author
-    authored_date = datetime.fromtimestamp(commit.authored_date)
-    commit_message = commit.message
-
-    new_repo.index.commit(
-        commit_message,
-        author=author,
-        commit_date=authored_date.strftime("%Y-%m-%d %H:%M:%S"),
-    )
-    print(f"Commit recréé dans le nouveau dépôt : {commit_message} à la date {authored_date}")
+# --------------------------- main logic ------------------------------------
 
 def main():
-    # Charger le dépôt contenant les faux fichiers JSON (ancien dépôt)
-    repo_path = "/path/to/git/repo"  # Le chemin vers le dépôt Git contenant les faux fichiers
-    repo = git.Repo(repo_path)
+    parser = argparse.ArgumentParser(description="Connectivity test")
+    parser.add_argument("--targets", nargs="*", help="host or host:port list")
+    args = parser.parse_args()
 
-    # Créer un nouveau dépôt dans un nouveau dossier
-    if os.path.exists(new_repo_path):
-        shutil.rmtree(new_repo_path)
-    os.makedirs(new_repo_path)
-    new_repo = git.Repo.init(new_repo_path)
+    targets = args.targets or os.getenv("TARGETS", "").split(",")
+    targets = [t.strip() for t in targets if t.strip()]
+    if not targets:
+        logger.error("No targets provided. Use --targets or export TARGETS.")
+        sys.exit(1)
 
-    # Parcourir l'historique des commits dans la branche spécifiée (ex : master-b)
-    commits = list(repo.iter_commits('master-b'))
+    # Ensure tools
+    which_or_install("ping", ["iputils-ping", "inetutils-ping"])
+    which_or_install("traceroute", ["traceroute"])
+    # Prefer nc over telnet
+    if shutil.which("nc") is None and shutil.which("telnet") is None:
+        which_or_install("nc", ["nmap-ncat", "netcat"])
+    which_or_install("netstat", ["net-tools"])  # on newer distro, ss may replace netstat
 
-    # Recréer chaque commit dans le nouveau dépôt
-    for commit in reversed(commits):  # Rejouer dans l'ordre chronologique
-        recreate_commit_with_binaries(new_repo, commit, repo)
+    logger.info("Starting connectivity checks")
 
-    # Pousser les modifications vers un dépôt distant, si nécessaire
-    # new_repo.git.push('origin', 'new-branch', force=True)  # Forcer le push sur une nouvelle branche
+    for target in targets:
+        host, _, port = target.partition(":")
+        logger.info("\n----- Testing %s -----", target)
+
+        run(["ping", "-c", "4", host], label=f"Ping {host}")
+        run(["traceroute", "-n", "-w", "2", "-m", "20", host], label=f"Traceroute {host}")
+
+        if port:
+            if shutil.which("nc"):
+                run(["nc", "-vz", host, port], label=f"nc {host}:{port}")
+            elif shutil.which("telnet"):
+                run(["telnet", host, port], label=f"telnet {host} {port}")
+            else:
+                logger.error("Neither nc nor telnet available for TCP test")
+
+    # General network status
+    run(["netstat", "-rn"], label="Routing table (netstat -rn)")
+    if shutil.which("ip"):
+        run(["ip", "addr"], label="IP interfaces (ip addr)")
+
+    logger.info("\nDiagnostics complete – log saved to %s", LOG_FILE.resolve())
+
 
 if __name__ == "__main__":
     main()
