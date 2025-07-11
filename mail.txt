@@ -15,3 +15,26 @@ Merci d’avance pour votre retour.
 
 Cordialement,
 Yassine
+
+### Outils réseau pour tests de flux ################################################
+RUN apt-get update && \
+    # ping / traceroute
+    apt-get install -y --no-install-recommends \
+        iputils-ping \
+        traceroute \
+        # netcat (nc) – version OpenBSD = la plus simple
+        netcat-openbsd \
+        # telnet
+        telnet \
+        # netstat  (fait partie de net-tools)
+        net-tools \
+        # diagnostics complémentaires (facultatifs mais pratiques)
+        dnsutils \
+        tcpdump \
+        nmap \
+        curl \
+        wget && \
+    # nettoyage pour garder l’image fine
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+#####################################################################################
