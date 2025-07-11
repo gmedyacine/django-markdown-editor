@@ -1,3 +1,17 @@
+# Telnet simple (port 443 par ex. ; l’option -z de nc fait la même chose en « mode scan »)
+telnet bu0021014645.svc.ng.bluemix.net 443
+
+# Netcat – test de connexion TCP « à blanc »
+nc -vz bu0021014645.svc.ng.bluemix.net 443
+
+# Traceroute détaillé
+traceroute -n bu0021014645.svc.ng.bluemix.net
+
+# Ping 10 paquets
+ping -c 10 bu0021014645.svc.ng.bluemix.net
+
+# Netstat – vérifier les sockets ouvertes
+netstat -tnpa
 Bonjour David, bonjour Virginie,
 
 Les fichiers CSV issus de l’instance COS sont désormais synchronisés dans Domino, dataset cos-edd-sync.
