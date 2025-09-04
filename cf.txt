@@ -1,3 +1,21 @@
+Bonjour Jérémy, bonjour Vincent,
+
+Dans le cadre du projet MVP RAG, nous souhaitons mettre en place une solution d’échange de crédentials sécurisée via Hvault entre nos environnements Datalab et CTDF.
+
+Pour cela, nous aimerions bénéficier de votre accompagnement sur :
+
+Les bonnes pratiques d’utilisation de Hvault (création et gestion des secrets, définition des policies, gestion des certificats, etc.) dans l’objectif de sécuriser les échanges de secrets entre Datalab et CTDF,
+
+La mise en œuvre concrète de ces échanges dans les deux sens entre les deux écosystèmes.
+
+
+Votre expertise sera précieuse pour cadrer et fiabiliser cette intégration.
+Merci d’avance pour votre retour, idéalement rapidement afin de planifier les prochaines étapes.
+
+Bien à vous,
+Yassine
+
+
 h1. IBM COS → Domino Dataset Synchronization
 
 *Page owner:* {{@your‑team}}
