@@ -1,0 +1,42 @@
+.rule_iaas:
+  rules:
+    - if: '$PLATFORM == "IAAS"'
+    - if: '$PLATFORM != "IAAS"'
+      when: never
+
+.rule_kaas:
+  rules:
+    - if: '$PLATFORM == "KAAS"'
+    - if: '$PLATFORM != "KAAS"'
+      when: never
+
+# ---- à partir d'ici, tu copies ton contenu réel ----
+stages:
+  - pre
+  - build-app
+  - app-test
+  - build-package
+  - publish-package
+  - app-quality
+  - app-security
+  - build-image
+  - docker-security
+  - push-image
+
+pre-config:
+  stage: pre
+  rules:
+    - !reference [.rule_iaas, rules]
+    - !reference [.rule_kaas, rules]
+  script:
+    - |
+      if [ "$IS_RELEASE" = "true" ]; then
+        export APP_IMAGE_TAG="${APP_NAME}:${APP_VERSION}"
+      else
+        export APP_IMAGE_TAG="${APP_NAME}:${APP_VERSION}-${CI_PIPELINE_ID}"
+      fi
+      echo "APP_IMAGE_TAG=${APP_IMAGE_TAG}" >> build.env
+  artifacts:
+    reports: { dotenv: build.env }
+
+build-app:
