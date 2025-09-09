@@ -1,3 +1,4 @@
+When Domino publishes an API, its access credentials (such as tokens) must not be distributed directly to the consuming services. Instead, these credentials are stored and regularly updated in HashiCorp Vault (HVAULT). Services that need to call the API fetch the token securely from Vault, either through Vault Agent templates or via direct API/SDK calls. This approach centralizes credential management, enables secure rotation, and ensures that services always use the most up-to-date token without requiring manual intervention.
 Bonjour Jérémy, bonjour Vincent,
 
 Dans le cadre du projet MVP RAG, nous souhaitons mettre en place une solution d’échange de crédentials sécurisée via Hvault entre nos environnements Datalab et CTDF.
