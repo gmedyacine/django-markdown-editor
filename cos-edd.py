@@ -15,6 +15,62 @@ VERIFY = False if VAULT_INSECURE else (VAULT_CACERT if VAULT_CACERT else True)
 CERT   = (VAULT_CLIENT_CERT, VAULT_CLIENT_KEY) if (VAULT_CLIENT_CERT and VAULT_CLIENT_KEY) else None
 TIMEOUT = 20
 
+def generate_token(sa_id, headers, base_url=None, token_name=None, verify=True, timeout=20):
+    """
+    Génère un token Domino pour un Service Account donné.
+
+    Params:
+      - sa_id (str): ID du service account (UUID)
+      - headers (dict): doit contenir "X-Domino-Api-Key", "Accept", "Content-Type"
+      - base_url (str): URL base des service accounts, ex:
+            "https://<domino-host>/v4/serviceAccounts"
+        (si None, on tente d'utiliser la variable globale `url`)
+      - token_name (str): nom du token; si None -> "token_rotate_YYYYmmddHHMMSS"
+      - verify (bool|str): vérification TLS (chemin CA possible)
+      - timeout (int): timeout en secondes
+
+    Retourne:
+      - token (str)
+    """
+    # Compat avec ta version: base_url peut être laissé à None et on utilise `url` global
+    if base_url is None:
+        try:
+            base_url = url  # variable globale comme dans ton script d’origine
+        except NameError:
+            raise ValueError("base_url manquant: passe base_url ou définis la variable globale 'url'.")
+
+    if token_name is None:
+        token_name = f"token_rotate_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    # Endpoint pour créer un token: POST /v4/serviceAccounts/{sa_id}/tokens
+    url_generate_token = f"{base_url.rstrip('/')}/{sa_id}/tokens"
+    token_data = {"name": token_name}
+
+    try:
+        response = requests.post(
+            url_generate_token,
+            headers=headers,
+            json=token_data,
+            verify=verify,
+            timeout=timeout,
+        )
+
+        if response.status_code in (200, 201):
+            body = response.json()
+            if "token" not in body:
+                raise KeyError("Champ 'token' absent dans la réponse Domino.")
+            return body["token"]  # ← le token à utiliser/pusher ensuite
+        else:
+            # remonter un message d'erreur utile
+            try:
+                err = response.json()
+            except Exception:
+                err = response.text
+            raise RuntimeError(f"Erreur génération token ({response.status_code}): {err}")
+
+    except requests.RequestException as e:
+        raise RuntimeError(f"Erreur réseau lors de la requête Domino: {e}") from e
+
 def _h(token=None):
     h = {"Content-Type": "application/json", "X-Vault-Request": "true"}
     if VAULT_NAMESPACE:
