@@ -1,54 +1,69 @@
-# Telnet simple (port 443 par ex. ; l’option -z de nc fait la même chose en « mode scan »)
-telnet bu0021014645.svc.ng.bluemix.net 443
+Got it 👍 Here’s the English translation of my previous answer:
 
-# Netcat – test de connexion TCP « à blanc »
-nc -vz bu0021014645.svc.ng.bluemix.net 443
+---
 
-# Traceroute détaillé
-traceroute -n bu0021014645.svc.ng.bluemix.net
+I can see the error message:
 
-# Ping 10 paquets
-ping -c 10 bu0021014645.svc.ng.bluemix.net
+```
+RuntimeError: DataLoader worker (pid 24459) is killed by signal: Bus error.  
+It is possible that dataloader's workers are out of shared memory.  
+Please try to raise your shared memory limit.
+```
 
-# Netstat – vérifier les sockets ouvertes
-netstat -tnpa
-Bonjour David, bonjour Virginie,
+---
 
-Les fichiers CSV issus de l’instance COS sont désormais synchronisés dans Domino, dataset cos-edd-sync.
-Le script cos_sync.py (lien ci-dessus) exécute une synchronisation unidirectionnelle complète depuis le bucket vers ce dataset ; il peut donc être réutilisé pour d’autres besoins data.
+### 👉 Why this happens
 
-Pour finaliser les droits, il me manque uniquement :
+* When using **PyTorch DataLoader** with multiple `num_workers`, each worker loads batches in parallel and stores data in shared memory (`/dev/shm`).
+* By default, in a Docker container (like on Domino), the `/dev/shm` size is only **64 MB**, which is too small for large datasets.
+* As a result: bus error → workers are killed.
 
-le nom de l’organisation Domino (ou l’UI) qui aura besoin d’accéder à ces données.
+---
 
-Dès réception, j’ajouterai la règle d’autorisation correspondante.
+### ✅ Possible solutions
 
-Plus de détails (variables d’environnement, modes, cron, etc.) se trouvent dans la page Confluence liée.
+#### 1. Increase shared memory (`/dev/shm`)
 
-Merci d’avance pour votre retour.
+* If you control the container launch:
 
-Cordialement,
-Yassine
+  ```bash
+  docker run --ipc=host ...
+  ```
 
-### Outils réseau pour tests de flux ################################################
-RUN apt-get update && \
-    # ping / traceroute
-    apt-get install -y --no-install-recommends \
-        iputils-ping \
-        traceroute \
-        # netcat (nc) – version OpenBSD = la plus simple
-        netcat-openbsd \
-        # telnet
-        telnet \
-        # netstat  (fait partie de net-tools)
-        net-tools \
-        # diagnostics complémentaires (facultatifs mais pratiques)
-        dnsutils \
-        tcpdump \
-        nmap \
-        curl \
-        wget && \
-    # nettoyage pour garder l’image fine
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-#####################################################################################
+  or
+
+  ```bash
+  docker run --shm-size=2g ...
+  ```
+* On Domino, it depends on how the platform manages environments. You can:
+
+  * Ask the admin to increase `--shm-size` in the Docker spec used by the environment.
+  * Or check if Domino allows configuring shared memory in the compute environment (sometimes under “Shared Memory”).
+
+#### 2. Reduce DataLoader memory usage
+
+* In your PyTorch code:
+
+  ```python
+  DataLoader(dataset, num_workers=0)
+  ```
+
+  or lower the number of workers (e.g. `num_workers=2` instead of 8).
+* If not required, disable `pin_memory=True`.
+* Reduce the `batch_size`.
+
+#### 3. Quick debug
+
+* Test the DataLoader with `num_workers=0`. If it works → the issue is definitely shared memory.
+* Then either fix the Docker config (proper solution) or adjust DataLoader parameters (workaround).
+
+---
+
+### 🚀 Recommendation for Domino
+
+1. **Short term (quick fix):** use `num_workers=0` or lower the batch size, just to unblock your run.
+2. **Medium term (proper fix):** ask your Infra/DevOps team to increase `/dev/shm` size in the Domino workload config (e.g., `--shm-size=2g`). This is the right solution if PyTorch is used frequently.
+
+---
+
+Do you want me to also draft a short message in English that you can send back to your colleagues (like a clean reply to the Teams/Slack thread)?
