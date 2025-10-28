@@ -9,3 +9,5 @@ python -m pip install --no-cache-dir pip-audit
 pip-audit -r requirements.in -f cyclonedx-json -o gl-sbom-report.cdx.json
 
 pip-audit -r requirements.in -f sarif -o gl-sast-report.sarif
+
+python -m piptools compile requirements.txt --generate-hashes --no-index -o requirements.lock
