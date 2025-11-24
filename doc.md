@@ -1,125 +1,76 @@
-## Introduction
-This document explains how to use credentials and configuration details stored in HashiCorp Vault and DMZR to establish a secure connection to a Redis database from a workspace in Domino. The instructions cover two methods for connecting: using Python and cURL, with a focus on securely retrieving the necessary secrets from Vault.
+Objet : Compte-rendu de réunion – Synchronisation Mail Triaging / Domino Data Lab
 
-## Prerequisites
-Before proceeding, ensure that you have access to the following:
+Bonjour Thierry, bonjour Nivaldo,
 
-1- Redis endpoint: Provided by DMZR (e.g., rd0021000358.svc-np.paas.echonet:30510).
-2- Namespace: The namespace for Vault (e.g., UPM_CARDIF/8785/EC002102860).
-3- HashiCorp Vault URL: The Vault API endpoint (e.g., https://hvault.staging.echonet.com).
-4- Vault token: An authentication token for accessing Vault.
-5- SSL certificate: Retrieved from Vault for secure connections.
-Make sure that the hvault environment is properly configured to allow access to the Redis secrets.
+Suite à notre échange d’aujourd’hui avec Mickael et moi-même côté Datalab, voici un récapitulatif clair des décisions et orientations retenues concernant l’intégration Mail Triaging ↔ Domino.
 
-## Step-by-Step Guide
-1. Retrieve Redis Credentials from HashiCorp Vault
-You need to use the Vault API to retrieve the credentials for connecting to Redis. These credentials are stored under a specific namespace and secret path in Vault.
+🧩 1. Rappel du besoin
 
-### Python Example:
-Here’s how to retrieve the Redis credentials using the Vault API in Python.
-```
-import requests
-import base64
-import redis
+Le mécanisme actuel de téléchargement via Mail Triaging doit évoluer afin d’éviter que les utilisateurs téléchargent localement des fichiers contenant des données sensibles. L’objectif est de basculer ces téléchargements vers un dataset Domino sécurisé, intégrant audit, gouvernance et restrictions d’accès.
 
-# Vault parameters
-vault_url = "https://hvault.staging.echonet.com"
-vault_token = "your_vault_token_here"
-vault_namespace = "UPM_CARDIF/8785/EC002102860"
-secret_path = "cloud/data/redis/RDO021000358"
+🔄 2. Solution initialement proposée par Datalab
 
-# Function to get secrets from Vault
-def get_secret_from_vault(secret_path, vault_token, vault_url, vault_namespace):
-    url = f"{vault_url}/v1/{secret_path}"
-    headers = {
-        "X-Vault-Token": vault_token,
-        "Accept": "application/json",
-        "X-Vault-Namespace": vault_namespace
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()['data']['data']
-    else:
-        raise Exception(f"Error retrieving secret: {response.status_code} {response.text}")
+La proposition initiale côté Domino consistait à :
 
-# Fetch the Redis credentials
-secret_data = get_secret_from_vault(secret_path, vault_token, vault_url, vault_namespace)
+Appeler une API Domino depuis Mail Triaging.
 
-redis_user = secret_data['user']
-redis_password = secret_data['password']
-redis_cert_base64 = secret_data['certificate']
+L’API recevait les informations nécessaires (UID, nom du fichier, contexte métier…).
 
-# Decode the certificate and save it to a file
-with open("/tmp/redis_certificate.pem", "w") as cert_file:
-    cert_file.write(f"-----BEGIN CERTIFICATE-----\n{redis_cert_base64}\n-----END CERTIFICATE-----")
+Elle déclenchait un job Domino chargé de récupérer automatiquement le fichier depuis COS et de l’insérer dans le dataset du projet concerné.
 
-# Connect to Redis
-r = redis.Redis(
-    host="rd0021000358.svc-np.paas.echonet",
-    port=30510,
-    username=redis_user,
-    password=redis_password,
-    ssl=True,
-    ssl_ca_certs="/tmp/redis_certificate.pem",
-    decode_responses=True
-)
+❌ Blocage
 
-# Test the connection
-try:
-    r.ping()
-    print("Successfully connected to Redis")
-except Exception as e:
-    print(f"Connection error: {e}")
+Cette solution demande du développement côté TAS, et l’équipe n’a pas de bande passante actuellement pour intégrer et maintenir cette API.
 
-```
-### cURL Example:
-You can also use curl to fetch the Redis secrets directly from Vault and interact with Redis.
-```
-# Fetch secrets from Vault
-curl -X GET \
-  "https://hvault.staging.echonet.com/v1/cloud/data/redis/RDO021000358" \
-  -H "X-Vault-Token: your_vault_token_here" \
-  -H "X-Vault-Namespace: UPM_CARDIF/8785/EC002102860" \
-  -H "accept: application/json"
+⭐ 3. Solution retenue par TAS (solution transitoire)
 
-# Output example:
-# {
-#   "data": {
-#     "data": {
-#       "certificate": "LS0tLS1CRUdJTiBDRV...",
-#       "user": "RLE_AP8835_rd0021000358",
-#       "password": "ntAA63--rK1Lgz2VRG31X"
-#     }
-#   }
-# }
+Une solution plus simple, centrée côté Domino, a été validée.
 
-# Once you have the Redis credentials and the SSL certificate, you can use tools like `stunnel` or direct Redis clients to establish the connection.
+Principe fonctionnel :
 
-```
+Mail Triaging affiche le nom du fichier à récupérer.
 
-2. Redis Connection Overview
-The connection to Redis is secured with SSL and authenticated using the credentials stored in Vault. Both the user and password are retrieved from Vault, along with the SSL certificate required to validate the connection.
+L’utilisateur se rend sur Domino.
 
-Here’s how the connection flow works:
+Une WebApp Domino permet de saisir ce nom.
 
-Retrieve credentials from Vault.
-Save the Redis SSL certificate locally.
-Use the credentials and certificate to authenticate the Redis connection.
-3. Connection Architecture
-The following diagram illustrates the architecture of connecting to Redis through HashiCorp Vault from a Domino workspace:
+Domino récupère le fichier depuis le bucket COS associé au UseCase.
 
-Diagram Description:
-Domino Workspace: This is where the connection to Redis is initiated, typically running a Python or curl script.
-HashiCorp Vault: Secrets (user, password, certificate) are stored here and are retrieved via the Vault API using an authentication token.
-Redis: The target database, which requires SSL for secure communication.
-I will generate a diagram to visually represent this.
+Le fichier est déposé dans le dataset Domino du projet.
 
-Troubleshooting
-If you encounter any errors during the connection process, consider checking the following:
+Observations :
 
-Ensure that your Vault token is valid and has permission to access the required namespace.
-Verify that the Redis endpoint and port are correctly specified.
-Make sure the SSL certificate is correctly formatted and placed in a file accessible by your script.
-Conclusion
-By following these steps, you can securely retrieve Redis credentials from HashiCorp Vault and connect to Redis from a Domino workspace. Both Python and curl methods are available for different use cases. The architecture ensures secure access to secrets and encrypted communication with Redis.
+Solution moins user-friendly, reconnue par Thierry et Nivaldo.
 
+Mais réalisable immédiatement, sans impact côté Mail Triaging.
+
+📌 4. Prérequis identifiés
+Côté TAS
+
+Fournir le mapping UseCase → Bucket COS, indispensable au routage automatique.
+
+Côté Datalab
+
+Développer la WebApp Domino permettant la récupération manuelle.
+
+Exposer le Swagger/Postman de l’API interne Domino.
+
+Gérer l’accès sécurisé au bucket (HMAC / certificat).
+
+Valider les flux réseau Domino ↔ COS ↔ Mail Triaging.
+
+📋 5. Actions
+Action	Responsable	Commentaire
+Fournir le mapping UseCase → Bucket COS	TAS	Bloquant pour démarrer les développements
+Développer la WebApp Domino	Datalab	Saisie du nom + récupération sécurisée
+Exposer l’API interne (Swagger/Postman)	Datalab	Prérequis pour une future intégration TAS
+Mise en place accès HMAC / certificat	Datalab	Nécessaire pour sécuriser le flux COS
+Validation des flux réseau	Infra / Datalab	COS / Domino / Mail Triaging
+🏁 6. Conclusion
+
+La solution API complète est mise en pause faute de disponibilité TAS.
+Nous avançons avec une solution transitoire, intégralement portée par Domino, permettant de débloquer le projet rapidement tout en respectant les exigences de sécurité.
+
+N’hésitez pas à revenir vers nous si un ajustement est nécessaire.
+
+Bien cordialement,
