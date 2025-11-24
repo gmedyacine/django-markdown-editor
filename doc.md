@@ -1,76 +1,122 @@
-Objet : Compte-rendu de réunion – Synchronisation Mail Triaging / Domino Data Lab
+📄 Compte-rendu de réunion – Synchronisation Mail Triaging ↔ Domino Data Lab
 
-Bonjour Thierry, bonjour Nivaldo,
+Date : (à compléter)
+Participants :
 
-Suite à notre échange d’aujourd’hui avec Mickael et moi-même côté Datalab, voici un récapitulatif clair des décisions et orientations retenues concernant l’intégration Mail Triaging ↔ Domino.
+TAS : Thierry, Nivaldo
 
-🧩 1. Rappel du besoin
+Domino Data Lab : Yacine (Tech Lead), Mickael (Scrum Master)
 
-Le mécanisme actuel de téléchargement via Mail Triaging doit évoluer afin d’éviter que les utilisateurs téléchargent localement des fichiers contenant des données sensibles. L’objectif est de basculer ces téléchargements vers un dataset Domino sécurisé, intégrant audit, gouvernance et restrictions d’accès.
+🎯 Rappel du besoin
 
-🔄 2. Solution initialement proposée par Datalab
+L’application Mail Triaging doit permettre le téléchargement de fichiers contenant potentiellement des données sensibles.
+L’objectif est de modifier le fonctionnement actuel, afin que les utilisateurs ne téléchargent plus directement les fichiers sur leurs postes, afin d’éviter toute fuite ou manipulation locale.
 
-La proposition initiale côté Domino consistait à :
+Aujourd’hui :
 
-Appeler une API Domino depuis Mail Triaging.
+Le fichier est poussé vers COS, puis téléchargé par l’utilisateur.
 
-L’API recevait les informations nécessaires (UID, nom du fichier, contexte métier…).
+Ce mécanisme doit évoluer pour garantir une gestion sécurisée (dataset Domino, droits, audit, etc.).
 
-Elle déclenchait un job Domino chargé de récupérer automatiquement le fichier depuis COS et de l’insérer dans le dataset du projet concerné.
+🧩 Solution initialement proposée par Domino Data Lab
 
-❌ Blocage
+Domino avait proposé la solution suivante :
 
-Cette solution demande du développement côté TAS, et l’équipe n’a pas de bande passante actuellement pour intégrer et maintenir cette API.
+Mail Triaging appelle une API produit Domino.
 
-⭐ 3. Solution retenue par TAS (solution transitoire)
+Cette API reçoit les infos nécessaires (UID, nom du fichier, use case…).
 
-Une solution plus simple, centrée côté Domino, a été validée.
+L’API déclenche un job Domino.
 
-Principe fonctionnel :
+Le job récupère le fichier dans le bucket COS et le télécharge automatiquement dans le dataset Domino du bon projet.
 
-Mail Triaging affiche le nom du fichier à récupérer.
+❌ Pourquoi cette solution n’a pas été retenue ?
 
-L’utilisateur se rend sur Domino.
+Nivaldo indique que l’intégration de cette API dans Mail Triaging demande des développements côté TAS.
 
-Une WebApp Domino permet de saisir ce nom.
+L’équipe TAS n’a pas de bande passante disponible pour intégrer cette logique maintenant.
 
-Domino récupère le fichier depuis le bucket COS associé au UseCase.
+Le schéma augmente la charge côté Mail Triaging, ce qui n’est pas souhaitable dans l’immédiat.
 
-Le fichier est déposé dans le dataset Domino du projet.
+💡 Solution privilégiée par l’équipe TAS
 
-Observations :
+Nivaldo propose une solution plus simple côté TAS, mais moins user-friendly :
 
-Solution moins user-friendly, reconnue par Thierry et Nivaldo.
+👉 Nouveau fonctionnement
 
-Mais réalisable immédiatement, sans impact côté Mail Triaging.
+L’utilisateur voit dans Mail Triaging le nom du fichier à récupérer.
 
-📌 4. Prérequis identifiés
-Côté TAS
+Il se rend sur Domino.
 
-Fournir le mapping UseCase → Bucket COS, indispensable au routage automatique.
+Il saisit ce nom de fichier dans une WebApp dédiée.
 
-Côté Datalab
+Il clique sur Télécharger.
 
-Développer la WebApp Domino permettant la récupération manuelle.
+Domino va chercher le fichier directement dans le bucket COS et le place dans le dataset correspondant.
 
-Exposer le Swagger/Postman de l’API interne Domino.
+✔ Avantages
 
-Gérer l’accès sécurisé au bucket (HMAC / certificat).
+Aucun développement côté Mail Triaging
 
-Valider les flux réseau Domino ↔ COS ↔ Mail Triaging.
+Charge de travail basculée vers Domino
 
-📋 5. Actions
-Action	Responsable	Commentaire
-Fournir le mapping UseCase → Bucket COS	TAS	Bloquant pour démarrer les développements
-Développer la WebApp Domino	Datalab	Saisie du nom + récupération sécurisée
-Exposer l’API interne (Swagger/Postman)	Datalab	Prérequis pour une future intégration TAS
-Mise en place accès HMAC / certificat	Datalab	Nécessaire pour sécuriser le flux COS
-Validation des flux réseau	Infra / Datalab	COS / Domino / Mail Triaging
-🏁 6. Conclusion
+Compatible avec l’organisation actuelle de TAS
 
-La solution API complète est mise en pause faute de disponibilité TAS.
-Nous avançons avec une solution transitoire, intégralement portée par Domino, permettant de débloquer le projet rapidement tout en respectant les exigences de sécurité.
+❌ Limites
 
-N’hésitez pas à revenir vers nous si un ajustement est nécessaire.
+La solution est moins ergonomique (processus en deux étapes pour l’utilisateur)
 
-Bien cordialement,
+Nécessite développement d’une WebApp Domino
+
+Nécessite une gouvernance claire sur les datasets et les accès
+
+Thierry et Nivaldo reconnaissent que cette solution n’est pas idéale, mais elle est actuellement la seule réalisable compte tenu des contraintes de charge de l’équipe TAS.
+
+📌 Éléments extraits des notes de Mickael (photo)
+
+Domino doit fournir une API permettant de déclencher la récupération depuis COS
+(peut être réutilisée dans la WebApp Domino).
+
+L’action utilisateur dans Mail Triaging doit simplement déclencher l'affichage du nom du fichier (pas d'appel API).
+
+Une feature DOMINO : développer un dataset Domino connecté directement à COS (accès direct).
+
+Un mapping UseCase ↔ Bucket doit être fourni par TAS.
+
+⚠️ Cette information est indispensable pour router la récupération du fichier vers le bon emplacement.
+
+L’ouverture des flux réseau Datalab ↔ Mail Triaging est à valider.
+
+Fournir le Swagger/Postman de l'API Domino (côté Datalab).
+
+Fournir un mécanisme d’accès aux HMAC/secrets (certificat ou token) pour sécuriser la récupération depuis COS.
+
+📋 Plan d’action – To Do
+Côté Datalab / Domino
+
+Développer la WebApp Domino permettant la saisie du nom du fichier et le déclenchement du téléchargement.
+
+Implémenter la logique de récupération depuis COS vers dataset.
+
+Fournir la documentation API (Swagger / Postman).
+
+Gérer les mécanismes d’authentification :
+
+certificat ou clé HMAC
+
+accès sécurisé au bucket
+
+Côté TAS (Mail Triaging)
+
+Fournir le fichier de mapping UseCase ↔ Bucket COS.
+
+Afficher le nom du fichier côté Mail Triaging.
+
+Aucun appel API à intégrer pour le moment.
+
+🎯 Conclusion
+
+Deux solutions ont été étudiées. La solution initiale, orientée API, a été écartée à cause du manque de bande passante côté TAS.
+L’équipe valide une solution transitoire, plus simple à implémenter, où la charge bascule temporairement vers Domino Data Lab.
+
+Cette approche permet de débloquer le projet rapidement, en attendant une future intégration complète avec Mail Triaging lorsque l’équipe TAS aura du temps.
