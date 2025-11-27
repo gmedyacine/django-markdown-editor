@@ -36,3 +36,15 @@ python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycoc
 nvcc --version        # indique la version du toolkit (s’il est présent)
 cat /usr/local/cuda/version.txt  # autre source si nvcc absent
 readlink -f /usr/local/cuda  
+
+conda list | grep -E 'pytorch-cuda|pytorch|torchvision|torchaudio'
+
+
+python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("torch CUDA (build):", torch.version.cuda)
+print("GPU available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("device:", torch.cuda.get_device_name(0))
+PY
