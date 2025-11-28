@@ -70,4 +70,10 @@ python -m pip install --no-cache-dir mmcv==2.2.0 \
 
 python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
 
+python - <<'PY'
+import torch, mmengine, mmcv, mmdet
+print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
+print("mmengine:", mmengine.__version__, "mmcv:", mmcv.__version__, "mmdet:", mmdet.__version__)
+PY
+
 
