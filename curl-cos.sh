@@ -77,3 +77,57 @@ print("mmengine:", mmengine.__version__, "mmcv:", mmcv.__version__, "mmdet:", mm
 PY
 
 
+
+
+
+
+
+
+
+
+
+
+# Autoriser 'conda activate' dans le Dockerfile
+SHELL ["/bin/bash", "-lc"]
+ARG CONDA_ENV_NAME=DWS-GPU
+
+# 0) Nettoyage des versions conflictuelles (idempotent)
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && python -m pip uninstall -y mmcv mmcv-full mmdet mmengine || true
+
+# 1) (Sécurité) S’assurer du stack Torch cu121
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && conda install -y pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 -c pytorch -c nvidia
+
+# 2) Dépendances de build (sans mim) : nvcc + outils
+#    - nvcc via conda (évite d’ajouter le repo NVIDIA apt)
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && conda install -y -c conda-forge cmake ninja git \
+ && conda install -y -c nvidia cuda-nvcc=12.1
+
+# 3) mmengine + compilation de mmcv==2.1.0 avec ops CUDA
+#    - Si GitHub est filtré, remplace l’URL par ton miroir (tar.gz de mmcv v2.1.0 dans Artifactory)
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && python -m pip install --no-cache-dir mmengine==0.10.4 "setuptools>=60" wheel "packaging>=23" pybind11 \
+ && git clone --depth 1 --branch v2.1.0 https://github.com/open-mmlab/mmcv.git /tmp/mmcv \
+ && cd /tmp/mmcv \
+ && export MMCV_WITH_OPS=1 FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9" \
+ && python -m pip install --no-cache-dir -v .
+
+# 4) (si besoin) mmdet 3.3.0 et dépendances usuelles
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && python -m pip install --no-cache-dir mmdet==3.3.0 "opencv-python-headless<5" "pycocotools>=2.0.7"
+
+# 5) Sanity check pendant le build (log)
+RUN source /opt/conda/etc/profile.d/conda.sh \
+ && conda activate ${CONDA_ENV_NAME} \
+ && python - <<'PY'
+import torch, mmcv, mmengine, mmdet
+print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
+print("mmcv:", mmcv.__version__, "| mmengine:", mmengine.__version__, "| mmdet:", mmdet.__version__)
+PY
