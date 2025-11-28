@@ -48,3 +48,26 @@ print("GPU available:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("device:", torch.cuda.get_device_name(0))
 PY
+
+
+python -m pip uninstall -y mmcv mmcv-full mmdet mmengine torch torchvision torchaudio
+conda remove -y pytorch torchvision torchaudio pytorch-cuda cudatoolkit
+python -m pip cache purge
+conda install -y pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 -c pytorch -c nvidia
+python -m pip install --no-cache-dir mmengine==0.10.4
+
+
+# mmcv wheel adapté à Torch 2.3 & CUDA 12.1, sans mim :
+python -m pip install --no-cache-dir mmcv==2.2.0 \
+  -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
+
+python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
+python -m pip install --no-cache-dir mmengine==0.10.4
+
+# mmcv wheel adapté à Torch 2.3 & CUDA 12.1, sans mim :
+python -m pip install --no-cache-dir mmcv==2.2.0 \
+  -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
+
+python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
+
+
