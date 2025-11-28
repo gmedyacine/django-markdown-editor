@@ -131,3 +131,40 @@ import torch, mmcv, mmengine, mmdet
 print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
 print("mmcv:", mmcv.__version__, "| mmengine:", mmengine.__version__, "| mmdet:", mmdet.__version__)
 PY
+
+
+
+
+
+
+# --- exécuter les opérations conda en root ---
+USER root
+
+ARG CONDA_ENV_NAME=DWS-GPU
+
+# 1) Nettoyage idempotent
+RUN conda install -y -n ${CONDA_ENV_NAME} pip && \
+    conda run -n ${CONDA_ENV_NAME} python -m pip uninstall -y mmcv mmcv-full || true
+
+# 2) Pile GPU Torch 2.3/cu121 (conda)
+RUN conda install -y -n ${CONDA_ENV_NAME} \
+      pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 \
+      -c pytorch -c nvidia && \
+    conda clean -y --all
+
+# 3) Paquets Python (pip) DANS l’env conda
+#    mmcv 2.1.0 : prendre le wheel cu121/torch2.3 (sinon tentative de build)
+RUN conda run -n ${CONDA_ENV_NAME} python -m pip install --no-cache-dir mmengine==0.10.4 mmdet==3.3.0 && \
+    conda run -n ${CONDA_ENV_NAME} python -m pip install --no-cache-dir --force-reinstall \
+      "mmcv==2.1.0" \
+      -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
+
+# 4) Sanity check pendant build
+RUN conda run -n ${CONDA_ENV_NAME} python - <<'PY'
+import torch, mmcv, mmengine, mmdet
+print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
+print("mmcv:", mmcv.__version__, "mmengine:", mmengine.__version__, "mmdet:", mmdet.__version__)
+PY
+
+# --- repasser en utilisateur applicatif ---
+USER domino
