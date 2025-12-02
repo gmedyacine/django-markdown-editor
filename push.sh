@@ -107,3 +107,26 @@ PY
 
 # (ne pas nettoyer pip/conda ici ; le FOOTER s'en occupe)
 #####################################################################
+
+
+
+
+
+
+
+
+
+
+USER domino
+ARG CONDA_ENV_NAME=DWS-GPU
+ARG PY_MAJOR=3.11
+
+# 0) créer l'env s'il n'existe pas (évite "No prefix")
+RUN test -d "/opt/conda/envs/${CONDA_ENV_NAME}" \
+ || mamba create -y -n "${CONDA_ENV_NAME}" "python=${PY_MAJOR}"
+
+# 1) aligner le name: du YAML (ou le supprimer)
+#    Option A: forcer le name à CONDA_ENV_NAME
+RUN sed -i -E 's/^name:.*/name: '"${CONDA_ENV_NAME}"'/' /tmp/environment.yml || true
+#    Option B (alternative) : retirer la ligne name:
+# RUN sed -i -E '/^name:/d' /tmp/environment.yml || true
