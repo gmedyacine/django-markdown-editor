@@ -49,3 +49,61 @@ assert mmdet.__version__.startswith("3.3."), "MMDet != 3.3.x"
 PY
 
 USER domino
+
+
+
+
+
+------
+ARG CONDA_ENV_NAME=DWS-GPU
+
+# 0) Auth Artifactory (utilisé par pip) — à faire en root
+USER root
+ARG DOCKERFILE_ARTIFACTORY_USERNAME
+ARG DOCKERFILE_ARTIFACTORY_TOKEN
+RUN printf "machine repo.artifactory-dogen.group.echonet login %s password %s\n" \
+      "$DOCKERFILE_ARTIFACTORY_USERNAME" "$DOCKERFILE_ARTIFACTORY_TOKEN" > /root/.netrc \
+ && chmod 600 /root/.netrc \
+ && printf "[global]\nindex-url = https://repo.artifactory-dogen.group.echonet/artifactory/api/pypi/pypi/simple\ntrusted-host = repo.artifactory-dogen.group.echonet\n" > /etc/pip.conf
+
+# 1) Purge idempotent (ignore les erreurs si non installés)
+RUN /opt/conda/envs/${CONDA_ENV_NAME}/bin/python -m pip uninstall -y \
+      torch torchvision torchaudio pytorch-cuda torchtext \
+      mmcv mmcv-full mmengine mmdet || true
+
+# 2) Emplacements des wheels internes
+ARG CUDA_TAG=cu121
+ARG TORCH_VER=2.3.1
+ARG PYTAG=cp311                 # cp310 si Python 3.10
+ARG TORCH_WHEELS=https://repo.artifactory-dogen.group.echonet/artifactory/wheels/pytorch/${CUDA_TAG}/torch${TORCH_VER%.*}/${PYTAG}
+ARG MMCV_WHEELS=https://repo.artifactory-dogen.group.echonet/artifactory/openmmlab/mmcv/${CUDA_TAG}/torch${TORCH_VER%.*}/${PYTAG}
+ENV PIP_DEFAULT_TIMEOUT=120
+
+# 3) Torch stack (offline depuis Artifactory wheels)
+RUN /opt/conda/envs/${CONDA_ENV_NAME}/bin/python -m pip install --no-cache-dir --no-index \
+      --find-links ${TORCH_WHEELS} \
+      torch==${TORCH_VER} torchvision==0.18.1 torchaudio==2.3.1
+
+# 4) mmengine + mmdet (depuis index mirrorré)
+RUN /opt/conda/envs/${CONDA_ENV_NAME}/bin/python -m pip install --no-cache-dir \
+      mmengine==0.10.4 mmdet==3.3.0
+
+# 5) mmcv 2.1.0 (wheel interne)
+RUN /opt/conda/envs/${CONDA_ENV_NAME}/bin/python -m pip install --no-cache-dir --no-index \
+      --find-links ${MMCV_WHEELS} \
+      mmcv==2.1.0
+
+# 6) Sanity check (échoue le build si mismatch)
+RUN /opt/conda/envs/${CONDA_ENV_NAME}/bin/python - <<'PY'
+import torch, mmcv, mmengine, mmdet
+print("Torch:", torch.__version__, "CUDA:", torch.version.cuda, "avail:", torch.cuda.is_available())
+print("mmcv:", mmcv.__version__, "mmengine:", mmengine.__version__, "mmdet:", mmdet.__version__)
+assert torch.__version__.startswith("2.3."), torch.__version__
+assert (torch.version.cuda or "").startswith("12.1"), torch.version.cuda
+assert mmcv.__version__.startswith("2.1."), mmcv.__version__
+assert mmengine.__version__.startswith("0.10."), mmengine.__version__
+assert mmdet.__version__.startswith("3.3."), mmdet.__version__
+PY
+
+# (ne pas nettoyer pip/conda ici ; le FOOTER s'en occupe)
+#####################################################################
