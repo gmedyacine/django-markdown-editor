@@ -1,14 +1,15 @@
 import os
 import json
 import requests
-import xml.etree.ElementTree as ET
 
 SESAME_URL = os.getenv(
     "SESAME_URL",
-    "https://europe-sesame-services-uatprj-assurance.staging.echonet/sesame_services/services/Authentica"  # adapte exactement à ton curl
+    "https://europe-sesame-services-uatprj-assurance.staging.echonet/sesame_services/services/Authentica"
 )
+
 SESAME_UID = os.getenv("SESAME_UID")
 SESAME_PASSWORD = os.getenv("SESAME_PASSWORD")
+
 
 def build_soap_envelope(uid: str, password: str, auth_type: str = "GROUP") -> str:
     return f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -26,7 +27,7 @@ def build_soap_envelope(uid: str, password: str, auth_type: str = "GROUP") -> st
 
 def call_sesame_auth():
     if not SESAME_UID or not SESAME_PASSWORD:
-        raise RuntimeError("SESAME_UID / SESAME_PASSWORD manquants dans l'environnement.")
+        raise RuntimeError("SESAME_UID / SESAME_PASSWORD manquants dans l'environnement Domino.")
 
     soap_envelope = build_soap_envelope(SESAME_UID, SESAME_PASSWORD)
 
@@ -34,38 +35,43 @@ def call_sesame_auth():
         "Content-Type": "text/xml; charset=utf-8",
         "Accept": "*/*",
         "Connection": "close",
-        "User-Agent": "curl/7.87.0",  # on imite un curl classique
-        # Ajoute ici d'autres headers si ton curl en a (SOAPAction, etc.)
+        "User-Agent": "curl/7.87.0",  # pour coller à ton curl
+        # Si jamais ils demandent un SOAPAction, tu l'ajoutes ici
+        # "SOAPAction": "loginInUserRef",
     }
 
-    print("=== REQUETE ENVoyee ===")
+    print("=== REQUÊTE ENVOYÉE ===")
     print("URL:", SESAME_URL)
     print("Headers:", json.dumps(headers, indent=2))
-    # évite d'afficher le mot de passe en clair si tu copies ça dans un ticket
-    print("Body (tronqué):", soap_envelope[:500], "...\n")
+    print("Body SOAP (tronqué):")
+    print(soap_envelope[:600], "...\n")
 
+    # Je désactive la vérif SSL pour ce POC, tu pourras remettre un CA plus tard
     try:
-        response = requests.post(
+        resp = requests.post(
             SESAME_URL,
             headers=headers,
             data=soap_envelope,
             timeout=30,
-            verify=False,  # pour l'instant, on reste en mode non vérifié
+            verify=False,
+            allow_redirects=False,  # IMPORTANT pour voir clairement le 302
         )
-    except requests.exceptions.ConnectionError as e:
-        print("❌ ConnectionError vers SESAME (le serveur ferme la connexion sans répondre).")
-        print(repr(e))
-        return None
     except Exception as e:
-        print("❌ Erreur inattendue:", repr(e))
+        print("❌ Erreur réseau:", repr(e))
         return None
 
-    print("=== REPONSE ===")
-    print("Status HTTP:", response.status_code)
-    print("Headers:", json.dumps(dict(response.headers), indent=2, ensure_ascii=False))
-    print("Body:", response.text[:4000])  # tronque un peu
+    print("=== RÉPONSE BRUTE ===")
+    print("Status HTTP:", resp.status_code)
+    print("Headers:", json.dumps(dict(resp.headers), indent=2, ensure_ascii=False))
+    print("Body (tronqué):")
+    print(resp.text[:4000])
 
-    return response
+    # Si c'est une redirection, on le montre clairement
+    if 300 <= resp.status_code < 400:
+        print("\n⚠️ Le serveur renvoie une REDIRECTION (", resp.status_code, ").")
+        print("Location:", resp.headers.get("Location"))
+
+    return resp
 
 
 if __name__ == "__main__":
