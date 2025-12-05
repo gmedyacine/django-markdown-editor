@@ -1,3 +1,32 @@
+# 6) Install mmengine / mmcv / mmdet + easyocr + onnxruntime dans DWS-GPU
+RUN . /opt/conda/etc/profile.d/conda.sh && conda activate "${CONDA_ENV_NAME}" && \
+    PIP_BIN="/opt/conda/envs/${CONDA_ENV_NAME}/bin/pip" && \
+    \
+    # stack mmengine/mmcv/mmdet (sans toucher torch déjà installé)
+    "$PIP_BIN" install --no-cache-dir \
+        "mmengine==0.10.4" \
+        "mmcv==2.1.0" \
+        "mmdet==3.3.0" && \
+    \
+    # easyocr sans deps, puis deps explicites pour éviter un downgrade de torch
+    "$PIP_BIN" install --no-cache-dir --no-deps "easyocr==1.7.1" && \
+    "$PIP_BIN" install --no-cache-dir \
+        "opencv-python-headless>=4.9.0.80" \
+        "scikit-image>=0.22.0" \
+        "shapely>=2.0.2" \
+        "pyclipper>=1.3.0.post5" \
+        "python-bidi>=0.4.2" \
+        "PyYAML>=6.0.1" \
+        "scipy>=1.13.0" \
+        "numpy>=1.26.4" && \
+    \
+    # onnxruntime : GPU si dispo dans l’Artifactory, sinon fallback CPU
+    ( "$PIP_BIN" install --no-cache-dir "onnxruntime-gpu==1.17.3" \
+      || "$PIP_BIN" install --no-cache-dir "onnxruntime==1.17.3" )
+
+
+
+
 import subprocess
 import os
 
