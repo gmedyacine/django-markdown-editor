@@ -1,170 +1,25 @@
-curl -v -H "Authorization: HMAC <HMAC_ACCESS_KEY>" \
-     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-     "https://bu0021009393.s3.direct.eu-fr2.cloud-object-storage.appdomain.cloud:4229"
-     
-pip uninstall -y mmcv mmcv-full mmdet mmengine torchvision torchaudio torch
-
-pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 \
-  --index-url https://download.pytorch.org/whl/cu121
-
-pip install --no-cache-dir mmengine==0.10.4 mmcv==2.2.0 mmdet==3.3.0
-
-python -c "import sys; print(sys.executable)"
-python -m pip -V
-python -m pip uninstall -y mmcv mmcv-full mmdet mmengine openmim torch torchvision torchaudio
-python -m pip cache purge
-# PyTorch cu121
-python -m pip install --no-cache-dir \
-  torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 \
-  --index-url https://download.pytorch.org/whl/cu121
-
-# OpenMMLab via openmim pour récupérer le bon wheel binaire mmcv
-python -m pip install -U --no-cache-dir openmim
-python -m pip install --no-cache-dir mmengine==0.10.4
-mim install "mmcv==2.2.0" -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
-python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
-cuda 118
-# PyTorch cu118
-python -m pip install --no-cache-dir \
-  torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 \
-  --index-url https://download.pytorch.org/whl/cu118
-
-python -m pip install -U --no-cache-dir openmim
-python -m pip install --no-cache-dir mmengine==0.10.4
-mim install "mmcv==2.1.0" -f https://download.openmmlab.com/mmcv/cu118/torch2.2/index.html
-python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
-nvcc --version        # indique la version du toolkit (s’il est présent)
-cat /usr/local/cuda/version.txt  # autre source si nvcc absent
-readlink -f /usr/local/cuda  
-
-conda list | grep -E 'pytorch-cuda|pytorch|torchvision|torchaudio'
-
-
-python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("torch CUDA (build):", torch.version.cuda)
-print("GPU available:", torch.cuda.is_available())
-if torch.cuda.is_available():
-    print("device:", torch.cuda.get_device_name(0))
-PY
-
-
-python -m pip uninstall -y mmcv mmcv-full mmdet mmengine torch torchvision torchaudio
-conda remove -y pytorch torchvision torchaudio pytorch-cuda cudatoolkit
-python -m pip cache purge
-conda install -y pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 -c pytorch -c nvidia
-python -m pip install --no-cache-dir mmengine==0.10.4
-
-
-# mmcv wheel adapté à Torch 2.3 & CUDA 12.1, sans mim :
-python -m pip install --no-cache-dir mmcv==2.2.0 \
-  -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
-
-python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
-python -m pip install --no-cache-dir mmengine==0.10.4
-
-# mmcv wheel adapté à Torch 2.3 & CUDA 12.1, sans mim :
-python -m pip install --no-cache-dir mmcv==2.2.0 \
-  -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
-
-python -m pip install --no-cache-dir mmdet==3.3.0 opencv-python-headless<5 pycocotools>=2.0.7
-
-python - <<'PY'
-import torch, mmengine, mmcv, mmdet
-print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
-print("mmengine:", mmengine.__version__, "mmcv:", mmcv.__version__, "mmdet:", mmdet.__version__)
-PY
-
-
-
-
-
-
-
-
-
-
-
-
-# Autoriser 'conda activate' dans le Dockerfile
-SHELL ["/bin/bash", "-lc"]
-ARG CONDA_ENV_NAME=DWS-GPU
-
-# 0) Nettoyage des versions conflictuelles (idempotent)
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && python -m pip uninstall -y mmcv mmcv-full mmdet mmengine || true
-
-# 1) (Sécurité) S’assurer du stack Torch cu121
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && conda install -y pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 -c pytorch -c nvidia
-
-# 2) Dépendances de build (sans mim) : nvcc + outils
-#    - nvcc via conda (évite d’ajouter le repo NVIDIA apt)
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && conda install -y -c conda-forge cmake ninja git \
- && conda install -y -c nvidia cuda-nvcc=12.1
-
-# 3) mmengine + compilation de mmcv==2.1.0 avec ops CUDA
-#    - Si GitHub est filtré, remplace l’URL par ton miroir (tar.gz de mmcv v2.1.0 dans Artifactory)
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && python -m pip install --no-cache-dir mmengine==0.10.4 "setuptools>=60" wheel "packaging>=23" pybind11 \
- && git clone --depth 1 --branch v2.1.0 https://github.com/open-mmlab/mmcv.git /tmp/mmcv \
- && cd /tmp/mmcv \
- && export MMCV_WITH_OPS=1 FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9" \
- && python -m pip install --no-cache-dir -v .
-
-# 4) (si besoin) mmdet 3.3.0 et dépendances usuelles
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && python -m pip install --no-cache-dir mmdet==3.3.0 "opencv-python-headless<5" "pycocotools>=2.0.7"
-
-# 5) Sanity check pendant le build (log)
-RUN source /opt/conda/etc/profile.d/conda.sh \
- && conda activate ${CONDA_ENV_NAME} \
- && python - <<'PY'
-import torch, mmcv, mmengine, mmdet
-print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
-print("mmcv:", mmcv.__version__, "| mmengine:", mmengine.__version__, "| mmdet:", mmdet.__version__)
-PY
-
-
-
-
-
-
-# --- exécuter les opérations conda en root ---
-USER root
-
-ARG CONDA_ENV_NAME=DWS-GPU
-
-# 1) Nettoyage idempotent
-RUN conda install -y -n ${CONDA_ENV_NAME} pip && \
-    conda run -n ${CONDA_ENV_NAME} python -m pip uninstall -y mmcv mmcv-full || true
-
-# 2) Pile GPU Torch 2.3/cu121 (conda)
-RUN conda install -y -n ${CONDA_ENV_NAME} \
-      pytorch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 pytorch-cuda=12.1 \
-      -c pytorch -c nvidia && \
-    conda clean -y --all
-
-# 3) Paquets Python (pip) DANS l’env conda
-#    mmcv 2.1.0 : prendre le wheel cu121/torch2.3 (sinon tentative de build)
-RUN conda run -n ${CONDA_ENV_NAME} python -m pip install --no-cache-dir mmengine==0.10.4 mmdet==3.3.0 && \
-    conda run -n ${CONDA_ENV_NAME} python -m pip install --no-cache-dir --force-reinstall \
-      "mmcv==2.1.0" \
-      -f https://download.openmmlab.com/mmcv/cu121/torch2.3/index.html
-
-# 4) Sanity check pendant build
-RUN conda run -n ${CONDA_ENV_NAME} python - <<'PY'
-import torch, mmcv, mmengine, mmdet
-print("torch:", torch.__version__, "cuda:", torch.version.cuda, "avail:", torch.cuda.is_available())
-print("mmcv:", mmcv.__version__, "mmengine:", mmengine.__version__, "mmdet:", mmdet.__version__)
-PY
-
-# --- repasser en utilisateur applicatif ---
-USER domino
+# 6) Stack OpenMMLab + easyocr + onnxruntime dans DWS-GPU
+RUN . /opt/conda/etc/profile.d/conda.sh && conda activate "${CONDA_ENV_NAME}" && \
+    PIP_BIN="/opt/conda/envs/${CONDA_ENV_NAME}/bin/pip" && \
+    \
+    # 6.1 mmengine / mmcv / mmdet (versions compatibles)
+    "$PIP_BIN" install --no-cache-dir \
+        "mmengine==0.10.4" \
+        "mmcv==2.1.0" \
+        "mmdet==3.3.0" && \
+    \
+    # 6.2 easyocr sans deps, puis deps explicites
+    "$PIP_BIN" install --no-cache-dir --no-deps "easyocr==1.7.1" && \
+    "$PIP_BIN" install --no-cache-dir \
+        "opencv-python-headless>=4.9.0.80" \
+        "scikit-image>=0.22.0" \
+        "shapely>=2.0.2" \
+        "pyclipper>=1.3.0.post5" \
+        "python-bidi>=0.4.2" \
+        "PyYAML>=6.0.1" \
+        "scipy>=1.13.0" \
+        "numpy>=1.26.4" && \
+    \
+    # 6.3 onnxruntime : GPU si dispo, sinon CPU
+    ( "$PIP_BIN" install --no-cache-dir "onnxruntime-gpu==1.17.3" \
+      || "$PIP_BIN" install --no-cache-dir "onnxruntime==1.17.3" )
