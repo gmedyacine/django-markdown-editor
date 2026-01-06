@@ -139,53 +139,54 @@ def _content_disposition_filename(cd: str) -> str | None:
 
 
 def download_document(token: str, doc_id: str) -> str:
+    token = token.strip()
+    print("TOKEN repr =", repr(token))
+    print("TOKEN len  =", len(token))
+
     url = f"{SUGAR_BASE_URL}/sugar-backend-webapp/arender/document/{doc_id}/file"
 
     headers = {
-        "x-token": token,                    # <= le token SESAME va ici
-        "X-SUGAR-BS": SUGAR_BS,              # vu dans ton curl
         "Accept": "application/octet-stream",
-        "X-CARDIF-CONSUMER": CARDIF_CONSUMER,  # vu dans ton curl
+        "X-SUGAR-BS": SUGAR_BS,
+        "X-CARDIF-CONSUMER": CARDIF_CONSUMER,
+        "X-CARDIF-AUTH-TOKEN": token,
+        "Accept-Encoding": "identity",
         "Connection": "close",
         "User-Agent": "curl/7.87.0",
     }
 
-    # headers additionnels (si ton curl en a d’autres)
-    if SUGAR_EXTRA_HEADERS_JSON.strip():
-        try:
-            extra = json.loads(SUGAR_EXTRA_HEADERS_JSON)
-            if not isinstance(extra, dict):
-                raise ValueError("SUGAR_EXTRA_HEADERS_JSON doit être un objet JSON")
-            headers.update(extra)
-        except Exception as e:
-            raise RuntimeError(f"SUGAR_EXTRA_HEADERS_JSON invalide: {e}")
+    s = requests.Session()
+    s.trust_env = False  # IMPORTANT : ignore HTTP(S)_PROXY / NO_PROXY etc.
 
-    print("=== REQUÊTE SUGAR (GET) ===")
-    print("URL:", url)
-    print("Headers:", json.dumps(headers, indent=2, ensure_ascii=False))
-
-    resp = requests.get(
+    resp = s.get(
         url,
         headers=headers,
         timeout=80,
         verify=VERIFY_SSL,
-        allow_redirects=False,   # IMPORTANT pour voir un 302 clairement (comme ton script)
+        allow_redirects=False,
         stream=True,
     )
 
-    print("=== RÉPONSE SUGAR ===")
+    # Vérifie ce qui est VRAIMENT parti sur le wire
+    print("=== HEADERS ENVOYÉS (requests) ===")
+    print(json.dumps(dict(resp.request.headers), indent=2, ensure_ascii=False))
+
     print("HTTP:", resp.status_code)
-    print("Headers:", json.dumps(dict(resp.headers), indent=2, ensure_ascii=False))
-
-    if 300 <= resp.status_code < 400:
-        raise RuntimeError(f"SUGAR: Redirection {resp.status_code} vers {resp.headers.get('Location')}")
-
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        # le 401 a souvent un body JSON utile
+        try:
+            print("Body (401/err):", resp.text[:2000])
+        except Exception:
+            print("Body (401/err): <non lisible>")
+        resp.raise_for_status()
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
     cd = resp.headers.get("Content-Disposition", "")
-    filename = _content_disposition_filename(cd) or f"{doc_id}.bin"
+    filename = f"{doc_id}.bin"
+    if "filename=" in cd:
+        filename = cd.split("filename=")[-1].strip().strip('"')
+
     out_path = os.path.join(OUT_DIR, filename)
 
     with open(out_path, "wb") as f:
@@ -193,7 +194,7 @@ def download_document(token: str, doc_id: str) -> str:
             if chunk:
                 f.write(chunk)
 
-    print(f"✅ Fichier téléchargé: {out_path}")
+    print("✅ téléchargé:", out_path)
     return out_path
 
 
