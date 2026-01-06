@@ -2,164 +2,101 @@ import os
 import json
 import re
 import requests
-import xmltodict
 
+DATASET_DIR = os.getenv("DATASET_DIR")           # OBLIGATOIRE
+DATASET_SUBDIR = os.getenv("DATASET_SUBDIR", "") # optionnel
 
-# ====== ENV ======
-SESAME_URL = os.getenv(
-    "SESAME_URL",
-    "https://europe-sesame-services-uatprj-assurance.staging.echonet/sesame_services/services/AuthenticationServicesWSP",
-)
-SESAME_UID = os.getenv("SESAME_UID")
-SESAME_PASSWORD = os.getenv("SESAME_PASSWORD")
+def _safe_filename(name: str) -> str:
+    # empêche ../ et autres surprises
+    name = (name or "").strip()
+    name = os.path.basename(name)
+    if not name:
+        return "document.bin"
+    # nettoyage soft
+    name = re.sub(r"[^\w\-. ()]", "_", name)
+    return name
 
-DOC_ID = os.getenv("DOC_ID", "255ce394-c033-4b8e-a7b4-0ee93d2b958a")
+def _build_output_path(filename: str) -> str:
+    if not DATASET_DIR:
+        raise RuntimeError("DATASET_DIR est obligatoire (chemin du dataset Domino).")
 
-SUGAR_BASE_URL = os.getenv("SUGAR_BASE_URL", "https://sugar-services.europe-staging.echonet")
-SUGAR_BS = os.getenv("SUGAR_BS", "dc-docper-bm")
-CARDIF_CONSUMER = os.getenv("CARDIF_CONSUMER", "SUGAR")
-OUT_DIR = os.getenv("OUT_DIR", ".")
-VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() in ("1", "true", "yes")
+    out_dir = os.path.join(DATASET_DIR, DATASET_SUBDIR) if DATASET_SUBDIR else DATASET_DIR
+    os.makedirs(out_dir, exist_ok=True)
 
-# Permet d’ajouter des headers du curl sans recoder :
-# ex: export SUGAR_EXTRA_HEADERS_JSON='{"X-FOO":"bar","x-user-id":"123"}'
-SUGAR_EXTRA_HEADERS_JSON = os.getenv("SUGAR_EXTRA_HEADERS_JSON", "")
+    return os.path.join(out_dir, _safe_filename(filename))
 
-
-# ====== SOAP (SESAME) ======
-def build_soap_envelope(uid: str, password: str, auth_type: str = "GROUP") -> str:
-    # (tu peux adapter les namespaces si besoin)
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:sprox="http://proxy.standard.services.sesame.bnppa.com">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <sprox:loginInUserRef>
-      <login>{uid}</login>
-      <password>{password}</password>
-      <authType>{auth_type}</authType>
-    </sprox:loginInUserRef>
-  </soapenv:Body>
-</soapenv:Envelope>
-"""
-
-
-def _pick(d: dict, *keys):
-    for k in keys:
-        if isinstance(d, dict) and k in d:
-            return d[k]
-    return None
-
-
-def parse_token_from_soap(xml_text: str) -> str:
-    obj = xmltodict.parse(xml_text)
-
-    env = _pick(obj, "SOAP-ENV:Envelope", "soapenv:Envelope", "Envelope")
-    if not env:
-        raise RuntimeError("SOAP: Envelope introuvable")
-
-    body = _pick(env, "SOAP-ENV:Body", "soapenv:Body", "Body")
-    if not body:
-        raise RuntimeError("SOAP: Body introuvable")
-
-    # La réponse peut être ns3:loginInUserRefResponse, etc. => on cherche une clé qui finit par loginInUserRefResponse
-    resp_key = None
-    for k in body.keys():
-        if str(k).endswith("loginInUserRefResponse"):
-            resp_key = k
-            break
-
-    if not resp_key:
-        raise RuntimeError(f"SOAP: loginInUserRefResponse introuvable. Clés Body={list(body.keys())}")
-
-    resp_obj = body[resp_key]
-
-    # Pareil, la clé token peut être loginInUserRefReturn (souvent sans namespace)
-    token = None
-    for k, v in resp_obj.items():
-        if str(k).endswith("loginInUserRefReturn"):
-            token = v
-            break
-
-    if not token:
-        raise RuntimeError(f"SOAP: loginInUserRefReturn introuvable. Clés={list(resp_obj.keys())}")
-
-    return str(token)
-
-
-def call_sesame_auth() -> str:
-    if not SESAME_UID or not SESAME_PASSWORD:
-        raise RuntimeError("SESAME_UID / SESAME_PASSWORD manquants dans l'environnement.")
-
-    soap_envelope = build_soap_envelope(SESAME_UID, SESAME_PASSWORD)
-
-    headers = {
-        "Content-Type": "text/xml; charset=utf-8",
-        "Accept": "*/*",
-        "Connection": "close",
-        "User-Agent": "curl/7.87.0",  # pour coller à ton curl
-        # Si un jour ils demandent un SOAPAction, tu l'ajoutes ici :
-        # "SOAPAction": "loginInUserRef",
-    }
-
-    print("=== REQUÊTE SESAME (SOAP) ===")
-    print("URL:", SESAME_URL)
-    print("Headers:", json.dumps(headers, indent=2))
-
-    resp = requests.post(
-        SESAME_URL,
-        headers=headers,
-        data=soap_envelope,
-        timeout=50,
-        verify=VERIFY_SSL,
-        allow_redirects=False,
-    )
-
-    print("=== RÉPONSE SESAME ===")
-    print("HTTP:", resp.status_code)
-    print("Headers:", json.dumps(dict(resp.headers), indent=2, ensure_ascii=False))
-    print("Body (début):", resp.text[:400])
-
-    if 300 <= resp.status_code < 400:
-        raise RuntimeError(f"SESAME: Redirection {resp.status_code} vers {resp.headers.get('Location')}")
-
-    resp.raise_for_status()
-
-    token = parse_token_from_soap(resp.text)
-    return token
-
-
-# ====== SUGAR (équivalent curl GET) ======
-def _content_disposition_filename(cd: str) -> str | None:
-    if not cd:
-        return None
-    # ex: attachment; filename="xxx.pdf"
-    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.IGNORECASE)
-    return m.group(1) if m else None
-
-
-def download_document(token: str, doc_id: str) -> str:
+def _auth_headers(token: str) -> dict:
     token = token.strip()
-    print("TOKEN repr =", repr(token))
-    print("TOKEN len  =", len(token))
-
-    url = f"{SUGAR_BASE_URL}/sugar-backend-webapp/arender/document/{doc_id}/file"
-
-    headers = {
-        "Accept": "application/octet-stream",
-        "X-SUGAR-BS": SUGAR_BS,
-        "X-CARDIF-CONSUMER": CARDIF_CONSUMER,
+    return {
+        "X-SUGAR-BS": SUGAR_BS,                 # IMPORTANT: dc-docpartners chez toi
+        "X-CARDIF-CONSUMER": CARDIF_CONSUMER,   # SUGAR
         "X-CARDIF-AUTH-TOKEN": token,
-        "Accept-Encoding": "identity",
         "Connection": "close",
         "User-Agent": "curl/7.87.0",
+        "Accept-Encoding": "identity",
     }
 
+def get_document_info(token: str, doc_id: str) -> dict:
+    """
+    Appel qui récupère les infos du doc (JSON) :
+    - fileName
+    - fileUri (souvent /arender/document/<id>/file)
+    """
+    url = f"{SUGAR_BASE_URL}/sugar-backend-webapp/arender/document/{doc_id}"
+    headers = _auth_headers(token)
+    headers["Accept"] = "application/json"
+
     s = requests.Session()
-    s.trust_env = False  # IMPORTANT : ignore HTTP(S)_PROXY / NO_PROXY etc.
+    s.trust_env = False  # évite proxies d'env
+
+    resp = s.get(url, headers=headers, timeout=50, verify=VERIFY_SSL, allow_redirects=False)
+    if resp.status_code != 200:
+        print("HTTP:", resp.status_code)
+        print("Body:", resp.text[:2000])
+        resp.raise_for_status()
+
+    data = resp.json()
+
+    afd = data.get("arenderFileData", {}) if isinstance(data, dict) else {}
+    file_name = (
+        afd.get("fileName")
+        or afd.get("documentFileName")
+        or data.get("fileName")
+        or f"{doc_id}.bin"
+    )
+
+    file_uri = (
+        afd.get("fileUri")
+        or afd.get("documentFileUri")
+        or None
+    )
+
+    # fallback si l'API ne renvoie pas l'uri
+    if not file_uri:
+        file_uri = f"/sugar-backend-webapp/arender/document/{doc_id}/file"
+
+    # construit une URL complète si besoin
+    if file_uri.startswith("http"):
+        download_url = file_uri
+    else:
+        download_url = f"{SUGAR_BASE_URL}{file_uri}"
+
+    return {
+        "doc_id": doc_id,
+        "file_name": file_name,
+        "download_url": download_url,
+        "raw": data,
+    }
+
+def download_file(token: str, download_url: str, out_path: str) -> str:
+    headers = _auth_headers(token)
+    headers["Accept"] = "application/octet-stream"
+
+    s = requests.Session()
+    s.trust_env = False
 
     resp = s.get(
-        url,
+        download_url,
         headers=headers,
         timeout=80,
         verify=VERIFY_SSL,
@@ -167,42 +104,31 @@ def download_document(token: str, doc_id: str) -> str:
         stream=True,
     )
 
-    # Vérifie ce qui est VRAIMENT parti sur le wire
-    print("=== HEADERS ENVOYÉS (requests) ===")
-    print(json.dumps(dict(resp.request.headers), indent=2, ensure_ascii=False))
-
-    print("HTTP:", resp.status_code)
     if resp.status_code != 200:
-        # le 401 a souvent un body JSON utile
+        print("HTTP:", resp.status_code)
         try:
-            print("Body (401/err):", resp.text[:2000])
+            print("Body:", resp.text[:2000])
         except Exception:
-            print("Body (401/err): <non lisible>")
+            pass
         resp.raise_for_status()
-
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    cd = resp.headers.get("Content-Disposition", "")
-    filename = f"{doc_id}.bin"
-    if "filename=" in cd:
-        filename = cd.split("filename=")[-1].strip().strip('"')
-
-    out_path = os.path.join(OUT_DIR, filename)
 
     with open(out_path, "wb") as f:
         for chunk in resp.iter_content(chunk_size=1024 * 256):
             if chunk:
                 f.write(chunk)
 
-    print("✅ téléchargé:", out_path)
+    print(f"✅ Sauvegardé: {out_path}")
     return out_path
-
 
 def main():
     token = call_sesame_auth()
-    print("✅ Token récupéré (début):", token[:20], "...")
-    download_document(token, DOC_ID)
 
+    info = get_document_info(token, DOC_ID)
+    filename = info["file_name"]
+    download_url = info["download_url"]
+
+    out_path = _build_output_path(filename)
+    download_file(token, download_url, out_path)
 
 if __name__ == "__main__":
     main()
