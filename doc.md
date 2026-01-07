@@ -1,3 +1,4 @@
+##SUGAR POC completed –  flow validated and proposed industrialization decisions
 Hi all,
 
 I’m sharing the final outcome of the SUGAR POC: the end-to-end integration is working and validated.
