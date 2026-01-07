@@ -1,122 +1,60 @@
-📄 Compte-rendu de réunion – Synchronisation Mail Triaging ↔ Domino Data Lab
+Hi all,
 
-Date : (à compléter)
-Participants :
+I’m sharing the final outcome of the SUGAR POC: the end-to-end integration is working and validated.
 
-TAS : Thierry, Nivaldo
+**What we achieved (POC scope)**
 
-Domino Data Lab : Yacine (Tech Lead), Mickael (Scrum Master)
+* We validated a “personal authentication” flow using my own UID and password.
+* Via **SESAME Europe**, we successfully retrieve an authentication token.
+* With this token, we can call **SUGAR** directly to:
 
-🎯 Rappel du besoin
+  * retrieve **document information/metadata**, and
+  * download the **document file**, stored with the same filename on the Domino side.
 
-L’application Mail Triaging doit permettre le téléchargement de fichiers contenant potentiellement des données sensibles.
-L’objectif est de modifier le fonctionnement actuel, afin que les utilisateurs ne téléchargent plus directement les fichiers sur leurs postes, afin d’éviter toute fuite ou manipulation locale.
+This confirms the feasibility of a Domino ↔ SUGAR connector based on SESAME token access.
 
-Aujourd’hui :
+---
 
-Le fichier est poussé vers COS, puis téléchargé par l’utilisateur.
+## Key decisions for industrialization (Architecture)
 
-Ce mécanisme doit évoluer pour garantir une gestion sécurisée (dataset Domino, droits, audit, etc.).
+**1) Authentication strategy (to be decided)**
 
-🧩 Solution initialement proposée par Domino Data Lab
+* **Option A — Service account (preferred for production):** stable ownership, easier lifecycle management, and clearer governance.
+* **Option B — Personal accounts:** workable but creates operational dependency on individuals (rotation, departures, access scope).
 
-Domino avait proposé la solution suivante :
+We need an architecture decision on which model we adopt, and what access rights/scope are expected on the SUGAR side.
 
-Mail Triaging appelle une API produit Domino.
+**2) Traceability & auditability (calls + document retrieval)**
+Goal: enable audits on “who accessed what, when, and why”.
 
-Cette API reçoit les infos nécessaires (UID, nom du fichier, use case…).
+* Standardize structured logs for each SUGAR call (endpoint, doc_id, timestamp, status code, requester identity / account type, correlation id if available).
+* Define where the **history is stored** and **how it is exploited** (retention period, searchability, export for audit requests).
+* Ensure we can reconstruct the full chain for a given document: metadata request → download → storage location.
 
-L’API déclenche un job Domino.
+(No monitoring/runbook focus at this stage—only auditability/traceability.)
 
-Le job récupère le fichier dans le bucket COS et le télécharge automatiquement dans le dataset Domino du bon projet.
+**3) Data retention & storage strategy on Domino**
+We need to decide what happens to documents once retrieved into Domino:
 
-❌ Pourquoi cette solution n’a pas été retenue ?
+* **Retention duration:** how long do we keep SUGAR documents in Domino datasets?
+* **Lifecycle actions:** do we automatically delete after X days, archive, or encrypt?
+* **Target storage (if applicable):** do we move/archive encrypted files to an object storage (e.g., COS / bucket), and keep only references/metadata in Domino?
+* **Access controls:** who can read the stored files and metadata, and under which conditions? 
 
-Nivaldo indique que l’intégration de cette API dans Mail Triaging demande des développements côté TAS.
+To avoid building a one-off implementation, the next steps should include an **abstraction layer** so the connector framework can onboard other document platforms beyond SUGAR. This will be taken into account from the start (common interfaces, pluggable backends, shared audit/retention mechanisms) to keep the solution optimized and reusable. Thibaut also suggested that we start projecting ourselves toward additional connectors, identifying potential future targets and ensuring the architecture remains flexible enough to integrate them easily.
 
-L’équipe TAS n’a pas de bande passante disponible pour intégrer cette logique maintenant.
+---
 
-Le schéma augmente la charge côté Mail Triaging, ce qui n’est pas souhaitable dans l’immédiat.
+## Proposed next step
 
-💡 Solution privilégiée par l’équipe TAS
+I suggest a short workshop with the architects to decide:
 
-Nivaldo propose une solution plus simple côté TAS, mais moins user-friendly :
+1. **Service account vs personal accounts** for the connector
+2. **Auditability approach** (logging + historical exploitation)
+3. **Retention / archival / encryption strategy** for downloaded documents
+4. **Abstraction approach** to support additional platforms in the same connector framework
 
-👉 Nouveau fonctionnement
+Once these decisions are confirmed, we can consolidate the target design and the implementation plan for an industrial connector.
 
-L’utilisateur voit dans Mail Triaging le nom du fichier à récupérer.
-
-Il se rend sur Domino.
-
-Il saisit ce nom de fichier dans une WebApp dédiée.
-
-Il clique sur Télécharger.
-
-Domino va chercher le fichier directement dans le bucket COS et le place dans le dataset correspondant.
-
-✔ Avantages
-
-Aucun développement côté Mail Triaging
-
-Charge de travail basculée vers Domino
-
-Compatible avec l’organisation actuelle de TAS
-
-❌ Limites
-
-La solution est moins ergonomique (processus en deux étapes pour l’utilisateur)
-
-Nécessite développement d’une WebApp Domino
-
-Nécessite une gouvernance claire sur les datasets et les accès
-
-Thierry et Nivaldo reconnaissent que cette solution n’est pas idéale, mais elle est actuellement la seule réalisable compte tenu des contraintes de charge de l’équipe TAS.
-
-📌 Éléments extraits des notes de Mickael (photo)
-
-Domino doit fournir une API permettant de déclencher la récupération depuis COS
-(peut être réutilisée dans la WebApp Domino).
-
-L’action utilisateur dans Mail Triaging doit simplement déclencher l'affichage du nom du fichier (pas d'appel API).
-
-Une feature DOMINO : développer un dataset Domino connecté directement à COS (accès direct).
-
-Un mapping UseCase ↔ Bucket doit être fourni par TAS.
-
-⚠️ Cette information est indispensable pour router la récupération du fichier vers le bon emplacement.
-
-L’ouverture des flux réseau Datalab ↔ Mail Triaging est à valider.
-
-Fournir le Swagger/Postman de l'API Domino (côté Datalab).
-
-Fournir un mécanisme d’accès aux HMAC/secrets (certificat ou token) pour sécuriser la récupération depuis COS.
-
-📋 Plan d’action – To Do
-Côté Datalab / Domino
-
-Développer la WebApp Domino permettant la saisie du nom du fichier et le déclenchement du téléchargement.
-
-Implémenter la logique de récupération depuis COS vers dataset.
-
-Fournir la documentation API (Swagger / Postman).
-
-Gérer les mécanismes d’authentification :
-
-certificat ou clé HMAC
-
-accès sécurisé au bucket
-
-Côté TAS (Mail Triaging)
-
-Fournir le fichier de mapping UseCase ↔ Bucket COS.
-
-Afficher le nom du fichier côté Mail Triaging.
-
-Aucun appel API à intégrer pour le moment.
-
-🎯 Conclusion
-
-Deux solutions ont été étudiées. La solution initiale, orientée API, a été écartée à cause du manque de bande passante côté TAS.
-L’équipe valide une solution transitoire, plus simple à implémenter, où la charge bascule temporairement vers Domino Data Lab.
-
-Cette approche permet de débloquer le projet rapidement, en attendant une future intégration complète avec Mail Triaging lorsque l’équipe TAS aura du temps.
+Thanks,
+Yassine
