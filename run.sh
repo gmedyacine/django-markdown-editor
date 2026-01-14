@@ -58,17 +58,30 @@ sleep 5
 # --- 5. Lancement du Proxy (Foreground) ---
 # On lance uvicorn en écoutant sur 0.0.0.0 pour que Domino puisse taper dessus
 uvicorn proxy:app --host 0.0.0.0 --port "${PROXY_PORT}" --log-level info
+Salut tout le monde,
 
-Bonne nouvelle : l'instance Phoenix est désormais opérationnelle et sécurisée sur Domino.
+Petit update sur le déploiement de Phoenix. J'ai validé une solution pour gérer l'authentification qui posait problème à cause de l'Ingress Controller de Domino (qui filtre le header Authorization).
 
-Pour contourner les restrictions de Domino qui bloquent/écrasent les headers Authorization standards, j'ai mis en place un proxy léger (sidecar) devant l'application.
+La solution implémentée : J'ai ajouté une couche intermédiaire (un script proxy.py) qui tourne dans le même run que Phoenix.
 
-Ce que ça change :
+Mécanisme : Le client envoie le token via un header alternatif (x-phoenix-api-key).
 
-Le proxy intercepte les requêtes entrantes.
+Traduction : Le proxy reçoit la requête, transforme ce header en Authorization: Bearer <token> et la transmet à Phoenix sur localhost.
 
-Il récupère notre token via un header personnalisé (x-phoenix-api-key) qui passe le pare-feu Domino.
+Cela nous permet de garder l'authentification activée sur Phoenix tout en traversant l'infrastructure Domino sans blocage. Tout est prêt pour l'ingestion de traces.
 
-Il réinjecte ce token en local sous forme d'authentification Bearer standard pour Phoenix.
+Petit snippet à ajouter (Indispensable pour les Data Scientists)
+N'oublie pas de leur donner l'exemple de code pour qu'ils puissent tester tout de suite :
 
-L'authentification fonctionne donc parfaitement sans compromettre la sécurité.
+Python
+
+# Pour se connecter, utilisez ce header spécifique dans votre config :
+tracer_provider = register(
+    headers={
+        "x-phoenix-api-key": os.environ.get("PHOENIX_API_KEY") 
+    },
+    project_name="Mon Projet",
+    endpoint=PHOENIX_ENDPOINT,
+    auto_instrument=True
+)
+Veux-tu que j'ajoute une phrase spécifique concernant la mise en place des variables d'environnement pour eux ?
