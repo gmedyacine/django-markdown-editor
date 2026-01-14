@@ -1,17 +1,41 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
-# (tes exports existants)
+# Port exposé par Domino (souvent fourni par la plateforme)
+PROXY_PORT="${PORT:-8888}"
+
+# Trouver un port libre pour Phoenix en localhost
+PHOENIX_INTERNAL_PORT="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
+
 export PHOENIX_ENABLE_AUTH=true
-export PHOENIX_SECRET="change-me-32chars-min1digit1lower"
+export PHOENIX_SECRET="${PHOENIX_SECRET:-change-me-32chars-min1digit1lower}"
 
-# Phoenix doit écouter en interne (pas sur le port exposé)
-export PHOENIX_INTERNAL_PORT=8899
+# Proxy -> Phoenix
 export PHOENIX_UPSTREAM="http://127.0.0.1:${PHOENIX_INTERNAL_PORT}"
-export PHOENIX_ALT_AUTH_HEADER="x-phoenix-api-key"
+export PHOENIX_ALT_AUTH_HEADER="${PHOENIX_ALT_AUTH_HEADER:-x-phoenix-api-key}"
 
-# 1) Lancer Phoenix sur 127.0.0.1:8899 (interne)
-python3 -m phoenix.server.main --host 127.0.0.1 --port ${PHOENIX_INTERNAL_PORT} serve &
+echo "[INFO] Proxy will listen on :${PROXY_PORT}"
+echo "[INFO] Phoenix will listen on 127.0.0.1:${PHOENIX_INTERNAL_PORT}"
 
-# 2) Lancer le proxy sur 0.0.0.0:8888 (port exposé Domino)
-# Assure-toi d’avoir fastapi/uvicorn/httpx installés (pip)
-uvicorn proxy:app --host 0.0.0.0 --port 8888
+# Nettoyage si le process s'arrête
+cleanup() {
+  echo "[INFO] Stopping background processes..."
+  jobs -p | xargs -r kill || true
+}
+trap cleanup EXIT
+
+# Lancer Phoenix en background (interne)
+python3 -m phoenix.server.main --host 127.0.0.1 --port "${PHOENIX_INTERNAL_PORT}" serve &
+
+# (Optionnel) attendre un peu que Phoenix démarre
+sleep 2
+
+# Lancer le proxy en foreground (exposé)
+uvicorn proxy:app --host 0.0.0.0 --port "${PROXY_PORT}"
