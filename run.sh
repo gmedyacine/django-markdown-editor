@@ -58,3 +58,17 @@ sleep 5
 # --- 5. Lancement du Proxy (Foreground) ---
 # On lance uvicorn en écoutant sur 0.0.0.0 pour que Domino puisse taper dessus
 uvicorn proxy:app --host 0.0.0.0 --port "${PROXY_PORT}" --log-level info
+
+Bonne nouvelle : l'instance Phoenix est désormais opérationnelle et sécurisée sur Domino.
+
+Pour contourner les restrictions de Domino qui bloquent/écrasent les headers Authorization standards, j'ai mis en place un proxy léger (sidecar) devant l'application.
+
+Ce que ça change :
+
+Le proxy intercepte les requêtes entrantes.
+
+Il récupère notre token via un header personnalisé (x-phoenix-api-key) qui passe le pare-feu Domino.
+
+Il réinjecte ce token en local sous forme d'authentification Bearer standard pour Phoenix.
+
+L'authentification fonctionne donc parfaitement sans compromettre la sécurité.
