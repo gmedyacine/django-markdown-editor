@@ -119,3 +119,11 @@ h2. 9  Maintainers
 ---
 
 *Last updated:* {date}
+
+
+I suggest going with a hybrid approach: Keep a single source code repository managed by your team, but deploy separate Domino Model APIs for each use case (e.g., one API per country or major risk type).
+Here is why this is the best setup for your team:
+Code Maintainability: You keep all your logic centralized in one single Domino project/repository. This makes version control, collaboration, and updates much easier for your developers.
+Performance & Isolation (Crucial): A Domino Model API typically processes requests sequentially. If you use a single API endpoint for everything, a sudden spike in traffic from one country (like a batch of claims) will create a queue and delay the responses for all other countries. By deploying separate APIs from your single codebase, you ensure each use case has its own dedicated resources and queue.
+Targeted Scalability: There are no hard limits on calls. By having separate APIs, we can configure autoscaling (HPA) and hardware tiers independently for each specific API based on its actual traffic and needs.
+This gives you the best of both worlds: easy code management and highly robust, isolated performance in production.
