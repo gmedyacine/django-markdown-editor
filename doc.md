@@ -1,61 +1,27 @@
-##SUGAR POC completed –  flow validated and proposed industrialization decisions
-Hi all,
+Based on your explanation and the provided screenshots (which show a `supervisord` configuration managing various Celery workers for different environments and a Python script used to trigger them), here is a technical description you can use to explain this architecture to your team or stakeholders.
 
-I’m sharing the final outcome of the SUGAR POC: the end-to-end integration is working and validated.
-
-**What we achieved (POC scope)**
-
-* We validated a “personal authentication” flow using my own UID and password.
-* Via **SESAME Europe**, we successfully retrieve an authentication token.
-* With this token, we can call **SUGAR** directly to:
-
-  * retrieve **document information/metadata**, and
-  * download the **document file**, stored with the same filename on the Domino side.
-
-This confirms the feasibility of a Domino ↔ SUGAR connector based on SESAME token access.
+This explanation clarifies how the limitation of Model APIs not having write access to Domino Datasets was bypassed using an asynchronous message-broker architecture.
 
 ---
 
-## Key decisions for industrialization (Architecture)
+### Asynchronous Log Collection Architecture for CARDX Model APIs
 
-**1) Authentication strategy (to be decided)**
+**Background & Constraint:**
+By design within Domino Data Lab, a published Model API does not have direct write access to Domino Datasets. To persist inference logs and API call data into the `CARDX_LOGS` dataset without impacting the API's response time or violating security constraints, we implemented a decoupled, asynchronous logging architecture using Redis and Celery.
 
-* **Option A — Service account (preferred for production):** stable ownership, easier lifecycle management, and clearer governance.
-* **Option B — Personal accounts:** workable but creates operational dependency on individuals (rotation, departures, access scope).
+**How the Data Flow Works:**
 
-We need an architecture decision on which model we adopt, and what access rights/scope are expected on the SUGAR side.
+1. **Log Generation & Queuing (Producer):** When the CARDX Model API receives a request, it generates the necessary log objects (inputs, predictions, metadata). Instead of attempting to write this directly to a file system, the API acts as a producer. It pushes these log objects to an external **Redis** instance, which acts as our message broker and temporary in-memory store.
+2. **Asynchronous Processing via Domino Jobs (Consumer):**
+To move the data from Redis to the persistent Domino Dataset, we utilize scheduled/triggered Domino Jobs (managed by the Data Science team). Because Domino Jobs *do* have read/write access to mounted Datasets, they act as the bridge.
+3. **Worker Orchestration (`supervisord` & `celery`):**
+Within these Domino Jobs, a process manager (`supervisord`) is launched. As seen in our configuration files (`supervisord.conf`), it orchestrates multiple **Celery workers**. Each worker is assigned to listen to specific Redis queues corresponding to different projects and environments (e.g., `fr_dc_kyi_dev_logs`, `co_claims_prod_logs`).
+4. **Dataset Persistence:**
+A script (e.g., `supervisord_collect.py`) starts the supervisor daemon, allowing the Celery workers to consume the queued log objects from Redis. The workers process these logs in batches and write them directly into the mounted **CARDX_LOGS dataset** directory. Once the queues are drained or the allocated time expires, the script gracefully stops the workers.
 
-**2) Traceability & auditability (calls + document retrieval)**
-Goal: enable audits on “who accessed what, when, and why”.
-
-* Standardize structured logs for each SUGAR call (endpoint, doc_id, timestamp, status code, requester identity / account type, correlation id if available).
-* Define where the **history is stored** and **how it is exploited** (retention period, searchability, export for audit requests).
-* Ensure we can reconstruct the full chain for a given document: metadata request → download → storage location.
-
-(No monitoring/runbook focus at this stage—only auditability/traceability.)
-
-**3) Data retention & storage strategy on Domino**
-We need to decide what happens to documents once retrieved into Domino:
-
-* **Retention duration:** how long do we keep SUGAR documents in Domino datasets?
-* **Lifecycle actions:** do we automatically delete after X days, archive, or encrypt?
-* **Target storage (if applicable):** do we move/archive encrypted files to an object storage (e.g., COS / bucket), and keep only references/metadata in Domino?
-* **Access controls:** who can read the stored files and metadata, and under which conditions? 
-
-To avoid building a one-off implementation, the next steps should include an **abstraction layer** so the connector framework can onboard other document platforms beyond SUGAR. This will be taken into account from the start (common interfaces, pluggable backends, shared audit/retention mechanisms) to keep the solution optimized and reusable. Thibaut also suggested that we start projecting ourselves toward additional connectors, identifying potential future targets and ensuring the architecture remains flexible enough to integrate them easily.
+**Summary:**
+In short, the Model API never touches the dataset directly. It simply fires logs into a Redis queue. A separate Domino Job, equipped with Celery workers and dataset write-permissions, periodically wakes up, pulls the logs from Redis, saves them to the dataset, and shuts down. This ensures data persistence while maintaining the strict read-only nature of the Model API environment.
 
 ---
 
-## Proposed next step
-
-I suggest a short workshop with the architects to decide:
-
-1. **Service account vs personal accounts** for the connector
-2. **Auditability approach** (logging + historical exploitation)
-3. **Retention / archival / encryption strategy** for downloaded documents
-4. **Abstraction approach** to support additional platforms in the same connector framework
-
-Once these decisions are confirmed, we can consolidate the target design and the implementation plan for an industrial connector.
-
-Thanks,
-Yassine
+Would you like me to adjust the level of technical detail, or add a section addressing potential monitoring/maintenance for this setup?
