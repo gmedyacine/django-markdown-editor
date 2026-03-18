@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="Electron" modified="2026-03-18T00:00:00.000Z" agent="Claude Architecture Export v2" version="21.0.0">
+  <diagram name="Domino-HVault-PG-Audit-v2" id="domino-hvault-pg-v2">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ============================================================ -->
+        <!-- ZONE VAULT EXTERNE (hors cluster K8s)                        -->
+        <!-- ============================================================ -->
+        <mxCell id="vault-zone" value="HashiCorp Vault — BNP Cardif Groupe&#xa;(externe au cluster K8s, accès HTTPS uniquement)"
+          style="swimlane;startSize=50;fillColor=#f9f0ff;strokeColor=#9673a6;strokeWidth=2;dashed=1;dashPattern=8 4;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;"
+          vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1560" height="260" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-core" value="Vault Core"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="20" y="80" width="160" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-pki-auth" value="Auth Method: PKI&#xa;(cert auth)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="220" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-pki-ca" value="PKI CA Engine&#xa;(signe les CRT clients)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="440" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-kv" value="KV Secrets Engine v2&#xa;(secrets app + creds PG)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="660" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-policy" value="Policy ACL&#xa;(path rules par CRT)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="880" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-audit-dev" value="Audit Device&#xa;(file / syslog)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="1100" y="80" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="vault-token" value="Token temporaire — TTL court · révocable · bound to policy · donne accès aux seuls paths autorisés"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666;fontSize=11;fontStyle=2;"
+          vertex="1" parent="vault-zone">
+          <mxGeometry x="220" y="170" width="1060" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- ZONE K8S CLUSTER                                             -->
+        <!-- ============================================================ -->
+        <mxCell id="k8s-zone" value="K8s Cluster — DataLab Cardif (ns: domino-platform)"
+          style="swimlane;startSize=40;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;dashed=1;dashPattern=8 4;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;"
+          vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="1560" height="360" as="geometry"/>
+        </mxCell>
+
+        <!-- Pod: Domino Job -->
+        <mxCell id="pod-job" value="pod: domino-job"
+          style="swimlane;startSize=28;fillColor=#fffde7;strokeColor=#d6b656;dashed=1;dashPattern=5 3;fontSize=11;"
+          vertex="1" parent="k8s-zone">
+          <mxGeometry x="20" y="50" width="540" height="280" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="job-workload" value="Domino Job&#xa;(Python compute)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;"
+          vertex="1" parent="pod-job">
+          <mxGeometry x="20" y="40" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="job-hvconn" value="hvaultconnector&#xa;(Python lib — importée)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=12;"
+          vertex="1" parent="pod-job">
+          <mxGeometry x="20" y="130" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="job-crt" value="Client CRT + KEY&#xa;(généré par PKI CA Vault)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;"
+          vertex="1" parent="pod-job">
+          <mxGeometry x="20" y="210" width="200" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ej1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" source="job-workload" target="job-hvconn" parent="pod-job">
+          <mxGeometry relative="1" as="geometry"/>
+          <mxCell as="value" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;" value="import"/>
+        </mxCell>
+
+        <mxCell id="ej2" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" edge="1" source="job-hvconn" target="job-crt" parent="pod-job">
+          <mxGeometry relative="1" as="geometry"/>
+          <mxCell as="value" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;" value="load cert"/>
+        </mxCell>
+
+        <!-- PKI flow detail box -->
+        <mxCell id="pki-flow-detail" value="Flux PKI hvaultconnector :&#xa;1. Charge le CRT depuis le pod&#xa;2. POST /v1/auth/pki/login + CRT&#xa;3. Vault vérifie le CRT (CA + policy)&#xa;4. Reçoit un Vault Token (TTL court)&#xa;5. GET /v1/secret/data/&lt;path&gt; avec le token&#xa;6. Reçoit secrets + creds PG"
+          style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#fff9e6;strokeColor=#d6a600;fontSize=10;align=left;spacingLeft=6;fontStyle=2;"
+          vertex="1" parent="pod-job">
+          <mxGeometry x="260" y="30" width="260" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- Pod: Domino Model API -->
+        <mxCell id="pod-api" value="pod: domino-model-api"
+          style="swimlane;startSize=28;fillColor=#fffde7;strokeColor=#d6b656;dashed=1;dashPattern=5 3;fontSize=11;"
+          vertex="1" parent="k8s-zone">
+          <mxGeometry x="600" y="50" width="400" height="280" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api-workload" value="Domino Model API&#xa;(Python FastAPI)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;"
+          vertex="1" parent="pod-api">
+          <mxGeometry x="20" y="40" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api-hvconn" value="hvaultconnector&#xa;(Python lib — importée)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=12;"
+          vertex="1" parent="pod-api">
+          <mxGeometry x="20" y="130" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api-crt" value="Client CRT + KEY&#xa;(généré par PKI CA Vault)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;"
+          vertex="1" parent="pod-api">
+          <mxGeometry x="20" y="210" width="200" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" source="api-workload" target="api-hvconn" parent="pod-api">
+          <mxGeometry relative="1" as="geometry"/>
+          <mxCell as="value" style="edgeLabel;html=1;" value="import"/>
+        </mxCell>
+        <mxCell id="ea2" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;" edge="1" source="api-hvconn" target="api-crt" parent="pod-api">
+          <mxGeometry relative="1" as="geometry"/>
+          <mxCell as="value" style="edgeLabel;html=1;" value="load cert"/>
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- ZONE POSTGRESQL + CONSUMERS                                   -->
+        <!-- ============================================================ -->
+        <mxCell id="pg-zone" value="PostgreSQL — audit platform"
+          style="swimlane;startSize=36;fillColor=#fffde7;strokeColor=#d6b656;strokeWidth=2;dashed=1;dashPattern=6 3;fontStyle=1;fontSize=13;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;"
+          vertex="1" parent="1">
+          <mxGeometry x="40" y="800" width="900" height="320" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pg-db" value="PostgreSQL&#xa;DB: audit_logs"
+          style="shape=mxgraph.flowchart.stored_data;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;"
+          vertex="1" parent="pg-zone">
+          <mxGeometry x="20" y="60" width="220" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pg-writer" value="Rôle: audit_writer&#xa;INSERT only · audit_logs&#xa;Creds: Vault KV secret/datalab/audit-pg/writer"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=left;spacingLeft=6;"
+          vertex="1" parent="pg-zone">
+          <mxGeometry x="20" y="160" width="320" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pg-reader" value="Rôle: audit_reader&#xa;SELECT only · audit_logs&#xa;Creds: Vault KV secret/datalab/audit-pg/reader"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;spacingLeft=6;"
+          vertex="1" parent="pg-zone">
+          <mxGeometry x="360" y="160" width="320" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pg-netpol" value="NetworkPolicy K8s :&#xa;ingress port 5432 ← pods label app=domino-workload seulement&#xa;Tout autre ingress bloqué (managers = accès via webapp uniquement)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999;fontSize=10;align=left;spacingLeft=6;fontStyle=2;"
+          vertex="1" parent="pg-zone">
+          <mxGeometry x="20" y="250" width="660" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Consumers zone -->
+        <mxCell id="consumers-zone" value="Consommateurs"
+          style="swimlane;startSize=36;fillColor=#f9f9f9;strokeColor=#aaa;strokeWidth=1.5;dashed=1;dashPattern=4 2;fontStyle=1;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="1000" y="800" width="600" height="320" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="webapp" value="Webapp audit&#xa;(lecture audit_logs — read-only)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;"
+          vertex="1" parent="consumers-zone">
+          <mxGeometry x="40" y="60" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="managers" value="Managers / Auditeurs&#xa;(accès via webapp)"
+          style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666;fontStyle=1;fontSize=12;"
+          vertex="1" parent="consumers-zone">
+          <mxGeometry x="40" y="180" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ec1" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" source="managers" target="webapp" parent="consumers-zone">
+          <mxGeometry relative="1" as="geometry"/>
+          <mxCell as="value" style="edgeLabel;html=1;" value="accède à"/>
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- FLUX CROSS-ZONES (numérotés)                                  -->
+        <!-- ============================================================ -->
+
+        <!-- [0] PKI CA Engine → CRT job (génération one-time) -->
+        <mxCell id="f0" value="[0] PKI CA génère CRT client (one-time setup)"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=2;dashed=1;dashPattern=6 3;fontStyle=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=1;"
+          edge="1" source="vault-pki-ca" target="job-crt" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="520" y="340"/>
+              <mxPoint x="150" y="340"/>
+              <mxPoint x="150" y="670"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [1] CRT → Vault Auth PKI (présentation) -->
+        <mxCell id="f1" value="[1] Présente CRT → Auth PKI (HTTPS POST /v1/auth/pki/login)"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1D9E75;strokeWidth=3;fontStyle=1;fontSize=10;"
+          edge="1" source="job-crt" target="vault-pki-auth" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="150" y="320"/>
+              <mxPoint x="150" y="220"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [2] Vault → Token temporaire -->
+        <mxCell id="f2" value="[2] Vault valide CRT + policy → retourne Token TTL court"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#9673a6;strokeWidth=3;fontStyle=1;fontSize=10;"
+          edge="1" source="vault-token" target="job-hvconn" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="350"/>
+              <mxPoint x="400" y="560"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [3] Token → GET secrets KV (dont creds PG) -->
+        <mxCell id="f3" value="[3] Token → GET /v1/secret/data/... (secrets app + creds PG writer)"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#185FA5;strokeWidth=3;fontStyle=1;fontSize=10;"
+          edge="1" source="job-hvconn" target="vault-kv" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="590"/>
+              <mxPoint x="260" y="320"/>
+              <mxPoint x="790" y="320"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [4] hvaultconnector → PG INSERT (avec creds récupérés) -->
+        <mxCell id="f4" value="[4] INSERT audit_logs (rôle audit_writer · creds obtenus en [3])"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D85A30;strokeWidth=3;fontStyle=1;fontSize=10;"
+          edge="1" source="job-hvconn" target="pg-db" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="570"/>
+              <mxPoint x="340" y="870"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [5] Webapp → SELECT PG -->
+        <mxCell id="f5" value="[5] SELECT audit_logs (rôle audit_reader · creds via Vault KV)"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1D9E75;strokeWidth=2;fontStyle=1;fontSize=10;"
+          edge="1" source="webapp" target="pg-db" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1080" y="870"/>
+              <mxPoint x="300" y="870"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- [6] Vault Audit Device → PG (audit log natif Vault) -->
+        <mxCell id="f6" value="[6] Vault Audit Device → forward logs natifs Vault → PG (pipeline séparé)"
+          style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;fontStyle=1;fontSize=10;"
+          edge="1" source="vault-audit-dev" target="pg-db" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1240" y="340"/>
+              <mxPoint x="1240" y="780"/>
+              <mxPoint x="160" y="780"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ============================================================ -->
+        <!-- LEGEND                                                        -->
+        <!-- ============================================================ -->
+        <mxCell id="legend" value="Légende &amp; recommandations architecturales"
+          style="swimlane;startSize=36;fillColor=#f9f9f9;strokeColor=#666;fontStyle=1;fontSize=13;"
+          vertex="1" parent="1">
+          <mxGeometry x="40" y="1180" width="1560" height="300" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg-flux" value="Flux :&#xa;[0] PKI CA génère le CRT client (one-time setup — dashed vert)&#xa;[1] hvaultconnector présente CRT → Vault Auth PKI (HTTPS — vert foncé)&#xa;[2] Vault valide policy → retourne Token TTL court (violet)&#xa;[3] Token → GET secrets KV dont creds PG (bleu)&#xa;[4] hvaultconnector INSERT audit_logs avec creds PG (orange)&#xa;[5] Webapp SELECT audit_logs, creds reader via Vault KV (vert)&#xa;[6] Vault Audit Device → PG logs natifs Vault, pipeline séparé (rouge dashed)"
+          style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;"
+          vertex="1" parent="legend">
+          <mxGeometry x="20" y="46" width="500" height="240" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg-pg" value="Recommandation credentials PostgreSQL :&#xa;&#xa;Puisque le Vault DB Engine n'est pas configurable :&#xa;• Stocker 2 secrets KV distincts :&#xa;   - secret/datalab/audit-pg/writer  →  user/pass rôle audit_writer&#xa;   - secret/datalab/audit-pg/reader  →  user/pass rôle audit_reader&#xa;• Policy Vault audit-writer : read seul sur le chemin writer&#xa;• Policy Vault audit-reader : read seul sur le chemin reader&#xa;• Rotation : mise à jour du KV + rolling restart pods (ou TTL token court force re-fetch)&#xa;&#xa;Accès PG ← audit_writer : hvaultconnector uniquement (NetworkPolicy K8s)&#xa;Accès PG ← audit_reader : webapp uniquement&#xa;Pas d'accès direct PG depuis l'extérieur du cluster"
+          style="text;html=1;strokeColor=none;fillColor=#fff9e6;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=11;"
+          vertex="1" parent="legend">
+          <mxGeometry x="560" y="46" width="500" height="240" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg-schema" value="Schema PostgreSQL audit_logs (proposition) :&#xa;&#xa;CREATE TABLE audit_logs (&#xa;  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,&#xa;  ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),&#xa;  namespace   TEXT,            -- domino-platform&#xa;  workload    TEXT,            -- job | model-api&#xa;  pod_name    TEXT,&#xa;  vault_path  TEXT,            -- /v1/secret/data/xxx&#xa;  action      TEXT,            -- read | login&#xa;  status      TEXT,            -- success | error&#xa;  duration_ms INTEGER,&#xa;  error_msg   TEXT             -- nullable&#xa;);"
+          style="text;html=1;strokeColor=none;fillColor=#f0f0f0;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontFamily=monospace;fontSize=10;"
+          vertex="1" parent="legend">
+          <mxGeometry x="1100" y="46" width="440" height="240" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
